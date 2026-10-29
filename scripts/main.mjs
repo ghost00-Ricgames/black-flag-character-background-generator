@@ -3,7 +3,7 @@ import { actorFacts } from "./character-data.mjs";
 import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePackage, biographyHtml } from "./interview.mjs";
 
 const SETTINGS = {
-  apiKey: { name: "Gemini API Key", hint: "Only trusted GMs should configure this. Stored in Foundry world settings, not a server-side vault.", type: String, default: "", config: true, scope: "client", restricted: true },
+  apiKey: { name: "Gemini API Key", hint: "Set this on the GM browser only. This key is stored in client settings, not world settings.", type: String, default: "", config: true, scope: "client", restricted: true },
   model: { name: "Gemini Model", hint: "Enter a compatible generateContent model ID.", type: String, default: "gemini-2.5-flash", config: true, scope: "world", restricted: true },
   campaignContext: { name: "Player-safe Campaign Context", hint: "Only lore that players are allowed to see.", type: String, default: "", config: true, scope: "world", restricted: true },
   requireApproval: { name: "Require GM Approval for Player Saves", type: Boolean, default: false, config: true, scope: "world", restricted: true },
@@ -12,25 +12,34 @@ const SETTINGS = {
 const escape = value => foundry.utils.escapeHTML(String(value ?? ""));
 const pending = new Map(), usage = new Map();
 const SOCKET = `module.${ID}`;
+const RESPONSE_QUERY = `${ID}.receiveResponse`;
 const randomId = () => foundry.utils.randomID();
 const onlineGM = () => game.users.filter(u => u.active && u.isGM).sort((a,b) => a.id.localeCompare(b.id))[0];
-const own = (actor, user) => !!actor && (user.isGM || actor.testUserPermission(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER));
+const own = (actor, user) => !!actor && !!user && (user.isGM || actor.testUserPermission(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER));
 const actorById = id => game.actors.get(id);
-function sendRequest(action, actorId, payload = {}) {
+const ACTIONS = new Set(["question", "package", "save"]);
+
+async function sendRequest(action, actorId, payload = {}) {
   const gm = onlineGM();
   if (!gm) throw new Error("A GM must be online to use Gemini.");
-  if (game.user.isGM && gm.id === game.user.id) return runAI(action, actorId, payload);
+  if (!ACTIONS.has(action)) throw new Error("Unsupported generator action.");
+  if (gm.id === game.user.id) return runAI(action, actorId, payload, game.user);
   const requestId = randomId();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(requestId); reject(new Error("GM request timed out.")); }, 90000);
-    pending.set(requestId, { resolve, reject, timer });
+    const timer = setTimeout(() => {
+      pending.delete(requestId);
+      reject(new Error("The GM did not respond within 90 seconds."));
+    }, 90000);
+    pending.set(requestId, { resolve, reject, timer, gmId: gm.id });
+    // Foundry server supplies the authenticated sender ID to the receiving handler.
+    // Do not include or trust a client-supplied requester ID.
     game.socket.emit(SOCKET, { type: "request", requestId, gmId: gm.id, actorId, action, payload });
   });
 }
 async function runAI(action, actorId, payload, requester = game.user) {
   const actor = actorById(actorId);
-  if (!own(actor, requester) || actor?.type !== "pc") throw new Error("Character ownership required.");
-  if (!["question","package","models","save"].includes(action)) throw new Error("Unsupported action.");
+  if (!own(actor, requester) || actor?.type !== "pc") throw new Error("PC ownership required.");
+  if (!ACTIONS.has(action)) throw new Error("Unsupported action.");
   if (action === "save") {
     if (!payload?.package) throw new Error("No package supplied.");
     const data = validatePackage(payload.package);
@@ -42,53 +51,62 @@ async function runAI(action, actorId, payload, requester = game.user) {
       });
       if (!approved) throw new Error("GM declined the save request.");
     }
-    // Only write the biography field after approval; preserve all other actor data.
-    const path = actor.system?.biography?.backstory !== undefined ? "system.biography.backstory" :
-      actor.system?.details?.biography !== undefined ? "system.details.biography.value" :
-      actor.system?.biography !== undefined ? "system.biography.value" : null;
-    if (!path) throw new Error("Could not identify the Black Flag biography field. Nothing was saved.");
-    await actor.update({ [path]: biographyHtml(data) });
+    await actor.update({ "system.biography.backstory": biographyHtml(data) });
     return { saved: true };
   }
+  // Never transmit or return the GM's client-local Gemini key.
   const key = game.settings.get(ID,"apiKey");
-  if (!key) throw new Error("GM has not configured a Gemini API key.");
-  if (action === "models") return GeminiService.models(key);
+  if (!key) throw new Error("The GM must configure a Gemini API key in this browser.");
   const model = game.settings.get(ID,"model");
   const context = game.settings.get(ID,"campaignContext");
   const instruction = action === "question" ? QUESTION_INSTRUCTION : PACKAGE_INSTRUCTION;
-  const result = await GeminiService.request({ key, model, instruction,
-    payload: { character: { ...actorFacts(actor), ...payload.questionnaire, classes: payload.questionnaire?.classes ?? actorFacts(actor).classes }, questionnaire: payload.questionnaire, answers: payload.answers, campaignContext: context, direction: payload.direction || "" }
+  const canonical = actorFacts(actor);
+  const submitted = payload?.questionnaire ?? {};
+  const character = { ...canonical, ...submitted, name: canonical.name, classes: submitted.classes ?? canonical.classes };
+  const result = await GeminiService.request({
+    key, model, instruction,
+    payload: { character, questionnaire: submitted, answers: payload?.answers ?? [], campaignContext: context, direction: payload?.direction || "" }
   });
   if (action === "package") return validatePackage(result);
   if (typeof result?.question !== "string" || !result.question.trim()) throw new Error("Gemini did not return a question.");
   return { question: result.question, suggestions: Array.isArray(result.suggestions) ? result.suggestions.slice(0,3).map(String) : [] };
 }
+// Query responses are targeted to the requesting User rather than broadcast.
+// A response may update only a pending client promise, never a document.
+function receiveResponse(message) {
+  if (!message || typeof message !== "object") return false;
+  const entry = pending.get(message.requestId);
+  if (!entry || entry.gmId !== message.gmId || onlineGM()?.id !== entry.gmId) return false;
+  clearTimeout(entry.timer);
+  pending.delete(message.requestId);
+  if (message.error) entry.reject(new Error(String(message.error)));
+  else entry.resolve(message.result);
+  return true;
+}
 async function onSocket(message, senderId) {
-  if (!message || typeof message !== "object") return;
-  if (message.type === "response" && message.recipientId === game.user.id) {
-    const entry = pending.get(message.requestId);
-    if (!entry || message.gmId !== onlineGM()?.id) return;
-    clearTimeout(entry.timer); pending.delete(message.requestId);
-    if (message.error) entry.reject(new Error(message.error)); else entry.resolve(message.result);
-    return;
-  }
-  if (message.type !== "request" || !game.user.isGM || onlineGM()?.id !== game.user.id || message.gmId !== game.user.id) return;
-  const requester = game.users.get(senderId);
-  if (!requester || !requester.active) return;
-  const actor = actorById(message.actorId);
-  if (!own(actor, requester) || actor?.type !== "pc") return;
-  const used = usage.get(requester.id) || 0;
-  const limit = Math.max(1, Number(game.settings.get(ID,"maxRequests")) || 30);
-  if (used >= limit && message.action !== "save") {
-    game.socket.emit(SOCKET, { type:"response", gmId:game.user.id, recipientId:requester.id, requestId:message.requestId, error:"AI request limit reached." });
-    return;
-  }
-  if (message.action !== "save") usage.set(requester.id, used + 1);
+  if (message?.type !== "request" || !game.user.isGM || onlineGM()?.id !== game.user.id || message.gmId !== game.user.id) return;
+  // The second argument is attached by Foundry's server, not taken from the packet.
+  const requester = typeof senderId === "string" ? game.users.get(senderId) : null;
+  if (!requester?.active || !requester.can("QUERY_USER")) return;
+  if (typeof message.requestId !== "string" || !/^[A-Za-z0-9]{8,64}$/.test(message.requestId)) return;
+  if (!ACTIONS.has(message.action)) return;
+  let result, error;
   try {
-    const result = await runAI(message.action, message.actorId, message.payload || {}, requester);
-    game.socket.emit(SOCKET, { type:"response", gmId:game.user.id, recipientId:requester.id, requestId:message.requestId, result });
-  } catch(error) {
-    game.socket.emit(SOCKET, { type:"response", gmId:game.user.id, recipientId:requester.id, requestId:message.requestId, error:error.message });
+    if (JSON.stringify(message.payload ?? {}).length > 60000) throw new Error("Generator request is too large.");
+    const actor = actorById(message.actorId);
+    if (!own(actor, requester) || actor?.type !== "pc") throw new Error("PC ownership required.");
+    const used = usage.get(requester.id) ?? 0;
+    const limit = Math.max(1, Number(game.settings.get(ID,"maxRequests")) || 30);
+    if (used >= limit && message.action !== "save") throw new Error("AI request limit reached.");
+    if (message.action !== "save") usage.set(requester.id, used+1);
+    result = await runAI(message.action, message.actorId, message.payload || {}, requester);
+  } catch (err) {
+    error = err instanceof Error ? err.message : "The GM could not complete this request.";
+  }
+  try {
+    await requester.query(RESPONSE_QUERY, { requestId: message.requestId, gmId: game.user.id, result, error }, { timeout: 30000 });
+  } catch (err) {
+    console.warn(`[${ID}] Could not return response to ${requester.name}`, err);
   }
 }
 class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
@@ -199,50 +217,43 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   }
 }
 function openGenerator(actor) {
-  if (!actor || actor.type!=="pc") return ui.notifications.warn("Select a character actor.");
-  if (!own(actor,game.user)) return ui.notifications.warn("You do not own this character.");
-  return new BackgroundGeneratorApp(actor).render(true);
+  if (!actor || actor.type !== "pc") return ui.notifications.warn("Choose a Black Flag PC actor.");
+  if (!own(actor, game.user)) return ui.notifications.warn("You do not own this PC.");
+  return new BackgroundGeneratorApp(actor).render({force: true});
 }
-Hooks.once("init",()=>{for(const [key,setting] of Object.entries(SETTINGS))game.settings.register(ID,key,setting);});
-Hooks.once("ready",()=>{game.socket.on(SOCKET,onSocket);});
-Hooks.on("renderActorSheetV2",(app,element)=>{
-  const actor=app.actor??app.document;
-  if(actor?.type!=="pc"||!own(actor,game.user))return;
-  const host=element instanceof HTMLElement?element:(element?.[0] ?? app.element);
-  if(!host||host.querySelector("[data-bf-background-open]"))return;
-  const header=host.querySelector(".window-header");
-  if(!header)return;
-  const button=document.createElement("button");button.type="button";button.className="header-control";
-  button.dataset.bfBackgroundOpen="";button.title="Generate character background";button.setAttribute("aria-label",button.title);
-  button.innerHTML='<i class="fas fa-book-open"></i>';
-  button.addEventListener("click",()=>openGenerator(actor));header.append(button);
-});
-globalThis.BlackFlagCharacterBackgroundGenerator={openGenerator,actorFacts,GeminiService};
 
-// Black Flag uses the PC actor type and its own ApplicationV2 sheet implementation.
-Hooks.on("renderPCSheet", (app, element) => {
-  const actor = app.actor ?? app.document;
-  if (actor?.type !== "pc" || !own(actor,game.user)) return;
-  const host = element instanceof HTMLElement ? element : (element?.[0] ?? app.element);
-  if (!host || host.querySelector("[data-bf-background-open]")) return;
-  const header = host.querySelector(".window-header");
-  if (!header) return;
-  const button = document.createElement("button");
-  button.type = "button"; button.className = "header-control";
-  button.dataset.bfBackgroundOpen = ""; button.title = "Generate character background";
-  button.innerHTML = '<i class="fas fa-book-open"></i>';
-  button.addEventListener("click", () => openGenerator(actor));
-  header.append(button);
-});
-Hooks.once("ready", () => {
+Hooks.once("init", () => {
+  for (const [key, setting] of Object.entries(SETTINGS)) game.settings.register(ID, key, setting);
+  CONFIG.queries[RESPONSE_QUERY] = receiveResponse;
   game.keybindings.register(ID, "openGenerator", {
     name: "Open Character Background Generator",
-    hint: "Opens the generator for the first owned PC selected in the Actors directory or on the canvas.",
-    editable: [{key: "KeyB", modifiers: ["CTRL","SHIFT"]}],
+    hint: "Open for a controlled PC token, or the first PC you own.",
+    editable: [{ key: "KeyB", modifiers: ["CTRL", "SHIFT"] }],
     onDown: () => {
-      const actor = canvas?.tokens?.controlled?.find(t => t.actor?.type === "pc")?.actor
-        ?? game.actors.find(a => a.type === "pc" && own(a,game.user));
-      openGenerator(actor); return true;
-    }, restricted: false, precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+      const actor = canvas?.tokens?.controlled?.find(t => t.actor?.type === "pc" && own(t.actor, game.user))?.actor
+        ?? game.actors.find(a => a.type === "pc" && own(a, game.user));
+      void openGenerator(actor);
+      return true;
+    },
+    restricted: false,
+    precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
   });
 });
+Hooks.once("ready", () => {
+  game.socket.on(SOCKET, onSocket);
+});
+// Official ApplicationV2 header-control hook works with Black Flag's PCSheet
+// via its ActorSheetV2 inheritance; no fragile .window-header DOM manipulation.
+Hooks.on("getHeaderControlsApplicationV2", (app, controls) => {
+  if (!(app instanceof foundry.applications.sheets.ActorSheetV2)) return;
+  const actor = app.actor ?? app.document;
+  if (actor?.type !== "pc" || !own(actor, game.user)) return;
+  controls.push({
+    action: "bf-character-background",
+    label: "Generate Character Background",
+    icon: "fas fa-book-open",
+    onClick: () => { void openGenerator(actor); },
+    ownership: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
+  });
+});
+globalThis.BlackFlagCharacterBackgroundGenerator = { openGenerator, actorFacts };
