@@ -72,17 +72,22 @@ async function jsonResponse(response) {
 }
 
 export class GeminiService {
-  static async request({ key, model = "gemini-3.8-flash", instruction, payload, kind = "package", temperature = 0.8 }) {
+  static async request({ key, model = "gemini-3.8-flash", instruction, payload, kind = "package", temperature = 0.8, timeoutMs }) {
     if (!key) throw new Error("Configure a Gemini API key on the GM browser.");
     const selectedModel = String(model || "gemini-3.8-flash").trim().replace(/^models\//, "");
     if (!/^[\w.-]+$/.test(selectedModel)) throw new Error("Gemini model ID contains invalid characters.");
     const schema = kind === "question" ? QUESTION_SCHEMA : kind === "package" ? PACKAGE_SCHEMA : null;
     if (!schema) throw new Error("Unsupported Gemini response format.");
+    const deadlineMs = timeoutMs ?? (kind === "question" ? 75000 : 150000);
     const requestBody = {
       model: selectedModel,
       input: JSON.stringify(payload),
       system_instruction: instruction,
-      generation_config: { temperature },
+      generation_config: {
+        temperature,
+        // A single interview question doesn't need deep model reasoning.
+        ...(kind === "question" ? {thinking_level: "low"} : {})
+      },
       response_format: { type: "text", mime_type: "application/json", schema },
       // We already send complete answer history; do not retain character backstories
       // for server-side conversational state.
@@ -93,9 +98,14 @@ export class GeminiService {
       response = await fetch(INTERACTIONS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(deadlineMs)
       });
     } catch (error) {
+      if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+        throw new Error("Gemini took too long to respond (" + Math.round(deadlineMs / 1000) +
+          " seconds). Check the model and Google AI Studio usage, then retry.");
+      }
       throw new Error("Could not reach the Gemini Interactions API. Check your network connection.");
     }
     const data = await jsonResponse(response);

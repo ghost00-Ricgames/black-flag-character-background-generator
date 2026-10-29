@@ -28,6 +28,7 @@ test("3.8 Flash Interactions REST request uses stateless structured JSON", async
     });
     assert.equal(url,"https://generativelanguage.googleapis.com/v1beta/interactions");
     assert.equal(init.method,"POST");
+    assert.ok(init.signal instanceof AbortSignal);
     assert.equal(init.headers["x-goog-api-key"],"secret-test-key");
     const body=JSON.parse(init.body);
     assert.equal(body.model,"gemini-3.8-flash");
@@ -38,6 +39,7 @@ test("3.8 Flash Interactions REST request uses stateless structured JSON", async
     assert.equal(body.response_format.type,"text");
     assert.equal(body.response_format.mime_type,"application/json");
     assert.equal(typeof body.generation_config.temperature,"number");
+    assert.equal(body.generation_config.thinking_level,"low");
     assert.equal(body.contents,undefined);
     assert.equal(body.generationConfig,undefined);
     assert.deepEqual(result,{question:"What changed?",suggestions:["A lost friend"]});
@@ -84,4 +86,18 @@ test("interaction parser rejects incomplete, missing and malformed JSON outputs"
   globalThis.fetch=async()=>response("not json");
   try { await assert.rejects(GeminiService.request({key:"key",kind:"question",instruction:"Ask",payload:{}}),/invalid JSON/); }
   finally {globalThis.fetch=saved;}
+});
+
+test("question timeout shows a useful error instead of hanging forever", async () => {
+  const saved=globalThis.fetch;
+  globalThis.fetch=async (_url,{signal})=>{
+    assert.ok(signal instanceof AbortSignal);
+    throw Object.assign(new Error("timed out"), {name:"TimeoutError"});
+  };
+  try {
+    await assert.rejects(
+      GeminiService.request({key:"key",kind:"question",instruction:"Ask",payload:{},timeoutMs:5}),
+      /Gemini took too long to respond/
+    );
+  } finally {globalThis.fetch=saved;}
 });
