@@ -130,3 +130,52 @@ test("GM-approved save writes only Black Flag backstory",async()=>{
   assert.deepEqual(Object.keys(pc.updates[0]),["system.biography.backstory"]);
   assert.match(pc.updates[0]["system.biography.backstory"],/A brief history/);
 });
+
+test("ApplicationV2 HTML renderer provides all character facts and editable questionnaire fields",async()=>{
+  const app=FakeApp.renders.at(-1).app;
+  const originalDocument=globalThis.document;
+  globalThis.document={createElement:tag=>({tagName:tag,className:"",innerHTML:""})};
+  try {
+    const html=await app._renderHTML({},{});
+    assert.equal(html.tagName,"section");
+    for(const name of ["classDetails","talents","skills","tools","physical_age","physical_height","physical_weight","physical_eyes","physical_skin","physical_hair"]){
+      assert.ok(html.innerHTML.includes(`name="${name}"`),`Missing input ${name}`);
+    }
+    assert.ok(html.innerHTML.includes("Alert"),"Talent import missing");
+    const received=[];
+    app._replaceHTML(html,{replaceChildren:(...nodes)=>received.push(...nodes)},{});
+    assert.equal(received[0],html);
+  } finally {globalThis.document=originalDocument;}
+});
+test("Questionnaire collects multiline classes, talents, and physical traits",()=>{
+  const app=FakeApp.renders.at(-1).app;
+  const form={data:{
+    lineage:"Human",heritage:"Wanderer",background:"Guide",level:"3",
+    classDetails:"Fighter | 2 | Champion\\nWizard | 1 | ",
+    talents:"Alert\\nLucky",skills:"athletics\\nperception",tools:"smith",
+    physical_age:"28",physical_height:"6ft",physical_weight:"",physical_eyes:"Brown",
+    physical_skin:"",physical_hair:"Black"
+  }};
+  const original=globalThis.FormData;
+  globalThis.FormData=class {constructor(f){this.data=f.data;} entries(){return Object.entries(this.data)[Symbol.iterator]();}};
+  try {
+    const data=app.collect(form);
+    assert.equal(data.classes.length,2);
+    assert.equal(data.classes[0].name,"Fighter");
+    assert.equal(data.classes[1].name,"Wizard");
+    assert.deepEqual(data.talents,["Alert","Lucky"]);
+    assert.deepEqual(data.skillProficiencies,["athletics","perception"]);
+    assert.deepEqual(data.toolProficiencies,["smith"]);
+    assert.equal(data.physical.height,"6ft");
+  } finally {globalThis.FormData=original;}
+});
+test("GM approval refusal prevents player backstory changes",async()=>{
+  const prior=values.requireApproval;values.requireApproval=true;confirmApproval=false;
+  const pack={story:"Disallowed",profile:{},relationships:[],secrets:[],hooks:[]};
+  const before=pc.updates.length;
+  try {
+    await request({type:"request",gmId:"gm",requestId:"0123456789abcdef",actorId:"hero",action:"save",payload:{package:pack}},"player");
+    assert.equal(pc.updates.length,before);
+    assert.match(queried.at(-1).message.error,/declined/);
+  } finally {values.requireApproval=prior;confirmApproval=true;}
+});
