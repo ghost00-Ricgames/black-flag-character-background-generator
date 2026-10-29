@@ -29,7 +29,7 @@ function sendRequest(action, actorId, payload = {}) {
 }
 async function runAI(action, actorId, payload, requester = game.user) {
   const actor = actorById(actorId);
-  if (!own(actor, requester) || actor.type !== "character") throw new Error("Character ownership required.");
+  if (!own(actor, requester) || actor.type !== "pc") throw new Error("Character ownership required.");
   if (!["question","package","models","save"].includes(action)) throw new Error("Unsupported action.");
   if (action === "save") {
     if (!payload?.package) throw new Error("No package supplied.");
@@ -43,7 +43,8 @@ async function runAI(action, actorId, payload, requester = game.user) {
       if (!approved) throw new Error("GM declined the save request.");
     }
     // Only write the biography field after approval; preserve all other actor data.
-    const path = actor.system?.details?.biography !== undefined ? "system.details.biography.value" :
+    const path = actor.system?.biography?.backstory !== undefined ? "system.biography.backstory" :
+      actor.system?.details?.biography !== undefined ? "system.details.biography.value" :
       actor.system?.biography !== undefined ? "system.biography.value" : null;
     if (!path) throw new Error("Could not identify the Black Flag biography field. Nothing was saved.");
     await actor.update({ [path]: biographyHtml(data) });
@@ -75,7 +76,7 @@ async function onSocket(message, senderId) {
   const requester = game.users.get(senderId);
   if (!requester || !requester.active) return;
   const actor = actorById(message.actorId);
-  if (!own(actor, requester) || actor?.type !== "character") return;
+  if (!own(actor, requester) || actor?.type !== "pc") return;
   const used = usage.get(requester.id) || 0;
   const limit = Math.max(1, Number(game.settings.get(ID,"maxRequests")) || 30);
   if (used >= limit && message.action !== "save") {
@@ -189,7 +190,7 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   }
 }
 function openGenerator(actor) {
-  if (!actor || actor.type!=="character") return ui.notifications.warn("Select a character actor.");
+  if (!actor || actor.type!=="pc") return ui.notifications.warn("Select a character actor.");
   if (!own(actor,game.user)) return ui.notifications.warn("You do not own this character.");
   return new BackgroundGeneratorApp(actor).render(true);
 }
@@ -197,7 +198,7 @@ Hooks.once("init",()=>{for(const [key,setting] of Object.entries(SETTINGS))game.
 Hooks.once("ready",()=>{game.socket.on(SOCKET,onSocket);});
 Hooks.on("renderActorSheetV2",(app,element)=>{
   const actor=app.actor??app.document;
-  if(actor?.type!=="character"||!own(actor,game.user))return;
+  if(actor?.type!=="pc"||!own(actor,game.user))return;
   const host=element instanceof HTMLElement?element:element?.[0];
   if(!host||host.querySelector("[data-bf-background-open]"))return;
   const header=host.querySelector(".window-header");
@@ -208,3 +209,31 @@ Hooks.on("renderActorSheetV2",(app,element)=>{
   button.addEventListener("click",()=>openGenerator(actor));header.append(button);
 });
 globalThis.BlackFlagCharacterBackgroundGenerator={openGenerator,actorFacts,GeminiService};
+
+// Black Flag uses the PC actor type and its own ApplicationV2 sheet implementation.
+Hooks.on("renderPCSheet", (app, element) => {
+  const actor = app.actor ?? app.document;
+  if (actor?.type !== "pc" || !own(actor,game.user)) return;
+  const host = element instanceof HTMLElement ? element : (element?.[0] ?? app.element);
+  if (!host || host.querySelector("[data-bf-background-open]")) return;
+  const header = host.querySelector(".window-header");
+  if (!header) return;
+  const button = document.createElement("button");
+  button.type = "button"; button.className = "header-control";
+  button.dataset.bfBackgroundOpen = ""; button.title = "Generate character background";
+  button.innerHTML = '<i class="fas fa-book-open"></i>';
+  button.addEventListener("click", () => openGenerator(actor));
+  header.append(button);
+});
+Hooks.once("ready", () => {
+  game.keybindings.register(ID, "openGenerator", {
+    name: "Open Character Background Generator",
+    hint: "Opens the generator for the first owned PC selected in the Actors directory or on the canvas.",
+    editable: [{key: "KeyB", modifiers: ["CTRL","SHIFT"]}],
+    onDown: () => {
+      const actor = canvas?.tokens?.controlled?.find(t => t.actor?.type === "pc")?.actor
+        ?? game.actors.find(a => a.type === "pc" && own(a,game.user));
+      openGenerator(actor); return true;
+    }, restricted: false, precedence: CONST.KEYBINDING_PRECEDENCE.NORMAL
+  });
+});
