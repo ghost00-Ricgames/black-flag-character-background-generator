@@ -22,6 +22,11 @@ export function actorFacts(actor) {
       existing.level++;
     }
   }
+  const talents = Array.from(actor.items ?? []).filter(i => i.type === "talent").map(i => i.name).filter(Boolean);
+  const prof = s.proficiencies ?? {};
+  const skillProficiencies = Object.entries(prof.skills ?? {}).filter(([,v]) => Number(v?.proficiency?.multiplier ?? v?.proficiency?.value ?? v?.proficiency ?? 0) > 0).map(([key]) => key);
+  const toolProficiencies = [...(prof.tools?.custom ?? []), ...(prof.base?.tools?.custom ?? [])];
+  const physical = Object.fromEntries(["age","height","weight","eyes","skin","hair"].map(k=>[k,s.biography?.[k] ?? ""]));
   const total = Object.keys(progression.levels ?? {}).length || classes.reduce((n,c)=>n+(c.level||0),0);
   return {
     name: actor.name ?? "",
@@ -30,6 +35,10 @@ export function actorFacts(actor) {
     background: nameOf(progression.background),
     class: classes.map(c=>[c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / "),
     classes,
+    talents,
+    skillProficiencies,
+    toolProficiencies,
+    physical,
     subclassNotes: "",
     level: total || "",
     notes: s.biography?.backstory ?? ""
