@@ -4,8 +4,8 @@
   "description": "Guided character histories for Tales of the Valiant using Gemini.",
   "version": "0.1.0",
   "compatibility": {
-    "minimum": "13",
-    "verified": "13"
+    "minimum": "14",
+    "verified": "14"
   },
   "authors": [
     {
