@@ -7,6 +7,18 @@
     "minimum": "14",
     "verified": "14"
   },
+  "relationships": {
+    "systems": [
+      {
+        "id": "black-flag",
+        "type": "requires",
+        "compatibility": {
+          "minimum": "3.0.075",
+          "verified": "3.0.079"
+        }
+      }
+    ]
+  },
   "authors": [
     {
       "name": "ghost00-Ricgames"
