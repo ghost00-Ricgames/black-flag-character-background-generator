@@ -1,0 +1,1 @@
+.bf-background-form { display:grid; gap:.65rem; } .bf-background-form label { display:grid; gap:.2rem; text-transform:capitalize; } .bf-background-form textarea { width:100%; resize:vertical; } .bf-background-form .bf-result { max-height:360px; overflow:auto; white-space:pre-wrap; } .bf-background-form pre { white-space:pre-wrap; overflow-wrap:anywhere; }
