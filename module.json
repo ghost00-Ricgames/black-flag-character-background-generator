@@ -36,5 +36,6 @@
   "download": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.0/black-flag-character-background-generator.zip",
   "url": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator",
   "license": "LICENSE",
-  "readme": "README.md"
+  "readme": "README.md",
+  "socket": true
 }
