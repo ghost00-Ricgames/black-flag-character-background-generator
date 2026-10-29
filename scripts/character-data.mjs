@@ -47,6 +47,6 @@ export function actorFacts(actor) {
     classes,
     subclassNotes: classNotes,
     level: level ?? "",
-    notes: first(s.details?.biography?.value,s.biography?.value)
+    notes: first(s.biography?.backstory,s.details?.biography?.value,s.biography?.value)
   };
 }
