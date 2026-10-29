@@ -105,7 +105,7 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
       <h2>${escape(this.facts.name)}</h2>
       <p>Review imported details and answer the starting questions.</p>
       ${fields.map(k=>`<label>${escape(k)}<input name="${k}" value="${escape(this.facts[k])}"></label>`).join("")}
-      <label>Classes, individual levels, and subclasses<textarea name="classDetails" rows="4">${escape(this.facts.classes.length ? this.facts.classes.map(c => [c.name,c.level ?? "",c.subclass].join(" | ")).join("\\n") : this.facts.class)}</textarea></label>\n      <p class="hint">One class per line: Class | Level | Subclass. Leave unknown values blank. Verify imported values against your character sheet.${this.facts.subclassNotes ? " Unmatched subclasses: "+escape(this.facts.subclassNotes) : ""}</p>\n      <label>Total character level<input name="level" value="${escape(this.facts.level)}"></label>
+      <label>Classes, individual levels, and subclasses<textarea name="classDetails" rows="4">${escape(this.facts.classes.length ? this.facts.classes.map(c => [c.name,c.level ?? "",c.subclass].join(" | ")).join("\n") : this.facts.class)}</textarea></label>\n      <p class="hint">One class per line: Class | Level | Subclass. Leave unknown values blank. Verify imported values against your character sheet.${this.facts.subclassNotes ? " Unmatched subclasses: "+escape(this.facts.subclassNotes) : ""}</p>\n      <label>Total character level<input name="level" value="${escape(this.facts.level)}"></label>
       <label>Character concept<textarea name="concept" rows="2"></textarea></label>
       <label>Formative experience<textarea name="formative" rows="2"></textarea></label>
       <label>Important relationship<textarea name="relationship" rows="2"></textarea></label>
@@ -126,7 +126,10 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   }
   collect(form) {
     const data=Object.fromEntries(new FormData(form).entries());
-    for (const key of ["lineage","heritage","background","level"]) this.facts[key]=data[key];\n    this.facts.classes = String(data.classDetails ?? "").split(/\\r?\\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });\n    this.facts.class = this.facts.classes.map(c => [c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / ");\n    data.classes = this.facts.classes;
+    for (const key of ["lineage","heritage","background","level"]) this.facts[key]=data[key];
+    this.facts.classes = String(data.classDetails ?? "").split(/\\r?\\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });
+    this.facts.class = this.facts.classes.map(c => [c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / ");
+    data.classes = this.facts.classes;
     return data;
   }
   async execute(action,form) {
