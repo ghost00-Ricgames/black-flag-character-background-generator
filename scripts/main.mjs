@@ -4,7 +4,7 @@ import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePac
 
 const SETTINGS = {
   apiKey: { name: "Gemini API Key", hint: "Set this on the GM browser only. This key is stored in client settings, not world settings.", type: String, default: "", config: true, scope: "client", restricted: true },
-  model: { name: "Gemini Model", hint: "Enter a compatible generateContent model ID.", type: String, default: "gemini-2.5-flash", config: true, scope: "world", restricted: true },
+  model: { name: "Gemini Model", hint: "Interactions API model ID (default: gemini-3.8-flash). Existing 2.5 Flash settings automatically upgrade.", type: String, default: "gemini-3.8-flash", config: true, scope: "world", restricted: true },
   campaignContext: { name: "Player-safe Campaign Context", hint: "Only lore that players are allowed to see.", type: String, default: "", config: true, scope: "world", restricted: true },
   requireApproval: { name: "Require GM Approval for Player Saves", type: Boolean, default: false, config: true, scope: "world", restricted: true },
   maxRequests: { name: "Maximum AI Requests per Player per Session", hint: "Enforced by the active GM client; resets when that GM reloads.", type: Number, default: 30, config: true, scope: "world", restricted: true }
@@ -57,14 +57,17 @@ async function runAI(action, actorId, payload, requester = game.user) {
   // Never transmit or return the GM's client-local Gemini key.
   const key = game.settings.get(ID,"apiKey");
   if (!key) throw new Error("The GM must configure a Gemini API key in this browser.");
-  const model = game.settings.get(ID,"model");
+  const configuredModel = String(game.settings.get(ID,"model") ?? "").trim();
+  // Existing worlds persist their old 2.5 default even when the registered default changes.
+  const model = !configuredModel || configuredModel === "gemini-2.5-flash"
+    ? "gemini-3.8-flash" : configuredModel;
   const context = game.settings.get(ID,"campaignContext");
   const instruction = action === "question" ? QUESTION_INSTRUCTION : PACKAGE_INSTRUCTION;
   const canonical = actorFacts(actor);
   const submitted = payload?.questionnaire ?? {};
   const character = { ...canonical, ...submitted, name: canonical.name, classes: submitted.classes ?? canonical.classes };
   const result = await GeminiService.request({
-    key, model, instruction,
+    key, model, instruction, kind: action,
     payload: { character, questionnaire: submitted, answers: payload?.answers ?? [], campaignContext: context, direction: payload?.direction || "" }
   });
   if (action === "package") return validatePackage(result);
@@ -241,6 +244,13 @@ Hooks.once("init", () => {
 });
 Hooks.once("ready", () => {
   game.socket.on(SOCKET, onSocket);
+  // Show the new model in Module Settings, not just in API requests.
+  // Only the designated active GM migrates the former world-scoped default.
+  if (game.user.isGM && onlineGM()?.id === game.user.id &&
+      game.settings.get(ID,"model") === "gemini-2.5-flash") {
+    void game.settings.set(ID, "model", "gemini-3.8-flash")
+      .catch(error => console.warn("[" + ID + "] Could not migrate Gemini model setting", error));
+  }
 });
 // Official ApplicationV2 header-control hook works with Black Flag's PCSheet
 // via its ActorSheetV2 inheritance; no fragile .window-header DOM manipulation.

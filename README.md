@@ -1,16 +1,25 @@
 # Black Flag Character Background Generator
 
-**v0.1.1 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
+**v0.1.2 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
 
 ## Install and launch
 
 1. Extract the installable ZIP directly into your Foundry `Data/modules/` directory. The archive already contains its own `black-flag-character-background-generator/` directory.
 2. Restart Foundry, enable the module in a **test** Black Flag world, and log in as GM.
-3. Open **Game Settings → Configure Settings → Module Settings** and re-enter your Gemini API key. **v0.1.1 switches the key to client-local storage:** previously configured world-scoped keys will not be read. Each GM browser that handles requests needs its own key.
+3. Open **Game Settings → Configure Settings → Module Settings** and re-enter your Gemini API key. **v0.1.1+ stores the key to client-local storage:** previously configured world-scoped keys will not be read. Each GM browser that handles requests needs its own key.
 4. Open a Black Flag **PC** sheet. In its window header controls menu, choose **Generate Character Background** (book icon).
 5. Alternative: **Ctrl+Shift+B** opens the generator for a controlled PC token or the first PC you own. Customize the shortcut under Configure Controls if necessary.
 
 This module works with Black Flag's `pc` actor type, not a D&D `character` actor.
+
+## Gemini 3.8 Flash / Interactions API
+
+- Default model is `gemini-3.8-flash`, using the REST **Interactions API** (`POST /v1beta/interactions`).
+- Existing worlds configured with the old default `gemini-2.5-flash` automatically switch to 3.8 Flash. Custom model choices are preserved.
+- The Gemini key remains local to the GM's browser; no API-key migration is needed from v0.1.1.
+- Each request uses structured JSON response format and `store: false` to avoid retaining character histories for server-side conversation state. All prior interview answers are included with each request.
+- 3.8 Flash availability, pricing, and rate limits depend on the API key's Google AI Studio project; a running Foundry instance and a real Gemini key are needed for a live integration test.
+- API documentation: https://ai.google.dev/gemini-api/docs/get-started and https://ai.google.dev/gemini-api/docs/migrate-to-interactions
 
 ## Interview
 

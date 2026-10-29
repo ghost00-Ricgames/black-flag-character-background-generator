@@ -62,7 +62,7 @@ let lastPayload;
 globalThis.fetch=async (url, options)=>{
   lastPayload=JSON.parse(options.body);
   const text=JSON.stringify({question:"What did you lose?",suggestions:["A friend"]});
-  return {ok:true,json:async()=>({candidates:[{content:{parts:[{text}]}}]})};
+  return {ok:true,status:200,json:async()=>({status:"completed",steps:[{type:"model_output",content:[{type:"text",text}]}]})};
 };
 
 test("v14 ApplicationV2 header control launches for an owned Black Flag PC only",async()=>{
@@ -96,6 +96,7 @@ test("Black Flag progression and proficiencies are extracted",()=>{
 });
 test("module manifest settings keep Gemini key client-local",()=>{
   assert.equal(registeredSettings.get("apiKey").scope,"client");
+  assert.equal(registeredSettings.get("model").default,"gemini-3.8-flash");
   assert.equal(typeof CONFIG.queries[`${ID}.receiveResponse`],"function");
 });
 test("GM accepts authenticated sender and returns a targeted Gemini answer",async()=>{
@@ -107,8 +108,8 @@ test("GM accepts authenticated sender and returns a targeted Gemini answer",asyn
   assert.equal(queried.length,1);
   assert.equal(queried[0].recipient,"player");
   assert.equal(queried[0].message.result.question,"What did you lose?");
-  assert.deepEqual(JSON.parse(lastPayload.contents[0].parts[0].text).character.talents,["Alert"]);
-  assert.equal(lastPayload.contents[0].parts[0].text.includes("not-a-real-key"),false);
+  assert.deepEqual(JSON.parse(lastPayload.input).character.talents,["Alert"]);
+  assert.equal(lastPayload.input.includes("not-a-real-key"),false);
 });
 test("GM rejects forged requester ID when server sender is missing",async()=>{
   queried.length=0;
@@ -178,4 +179,20 @@ test("GM approval refusal prevents player backstory changes",async()=>{
     assert.equal(pc.updates.length,before);
     assert.match(queried.at(-1).message.error,/declined/);
   } finally {values.requireApproval=prior;confirmApproval=true;}
+});
+
+test("Existing Gemini 2.5 Flash world preference uses 3.8 Flash with Interactions", async () => {
+  const prior=values.model;values.model="gemini-2.5-flash";
+  try {
+    queried.length=0;
+    await request({type:"request",gmId:"gm",requestId:"0123456789abcdef",actorId:"hero",
+      action:"question",payload:{questionnaire:{},answers:[]}},"player");
+    assert.equal(lastPayload.model,"gemini-3.8-flash");
+    assert.equal(lastPayload.store,false);
+    assert.equal(lastPayload.response_format.mime_type,"application/json");
+    assert.equal(lastPayload.response_format.type,"text");
+    assert.equal(lastPayload.system_instruction.length>0,true);
+    assert.equal(lastPayload.contents,undefined);
+    assert.equal(lastPayload.generationConfig,undefined);
+  } finally {values.model=prior;}
 });
