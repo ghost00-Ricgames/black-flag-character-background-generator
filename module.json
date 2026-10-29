@@ -1,8 +1,8 @@
 {
   "id": "black-flag-character-background-generator",
   "title": "Black Flag Character Background Generator",
-  "description": "Guided character histories for Tales of the Valiant using Gemini.",
-  "version": "0.1.5",
+  "description": "Beta: guided Tales of the Valiant character histories using the Google Gemini API (user-supplied API key required).",
+  "version": "0.1.5-beta.1",
   "compatibility": {
     "minimum": "14",
     "verified": "14",
@@ -32,8 +32,8 @@
   "styles": [
     "styles/background-generator.css"
   ],
-  "manifest": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/latest/download/module.json",
-  "download": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.5/black-flag-character-background-generator.zip",
+  "manifest": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.5-beta.1/module.json",
+  "download": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.5-beta.1/black-flag-character-background-generator.zip",
   "url": "https://github.com/ghost00-Ricgames/black-flag-character-background-generator",
   "license": "LICENSE",
   "readme": "README.md",

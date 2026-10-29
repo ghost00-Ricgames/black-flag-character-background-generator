@@ -1,16 +1,35 @@
 # Black Flag Character Background Generator
 
-**v0.1.5 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
+> **PUBLIC BETA v0.1.5-beta.1 — GOOGLE GEMINI API ACCESS REQUIRED**
+>
+> This module **does not work without your own Google Gemini API key and access to a supported Gemini model**. The GM must obtain a key through [Google AI Studio](https://aistudio.google.com/apikey), configure it in Foundry, and have an eligible Google API project with available quota. Google may impose usage limits or charges; any Google API costs are the user's responsibility. A Gemini API key is **not included**, and the module does not provide free AI requests.
+
+**System compatibility:** Foundry VTT **14** (tested against **14.369**), Kobold Press Black Flag / Tales of the Valiant **3.0.075+** (verified with **3.0.079**). This is a **beta**, not a Foundry Package Directory listing.
+
+**Install via Foundry manifest:**
+`https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.5-beta.1/module.json`
+
+**Release and ZIP download:** [v0.1.5-beta.1](https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/tag/v0.1.5-beta.1).
+
+## Required Gemini API setup
+
+1. Create or access a Gemini API project in [Google AI Studio](https://aistudio.google.com/apikey). Generate your **own** API key and ensure the project can use a configured model.
+2. Install this module and enable it in a Foundry world using the **Black Flag** game system.
+3. Sign in **as the GM** and open **Game Settings → Configure Settings → Module Settings → Black Flag Character Background Generator**.
+4. Paste the Gemini API key into **Gemini API Key**. The key is stored **locally in the GM's browser**, not in the module, README, or player prompts. Other GM browsers need their own configured key.
+5. Use **Gemini Model** (default `gemini-3.8-flash`) and optional **Fallback Gemini Model** (default `gemini-3.6-flash`). Availability depends on your Google account, API project and rate limits. If neither model is available to your key, select a supported model and review any error.
+6. Open an owned Black Flag PC actor's sheet and choose **Generate Character Background** from its header controls. Players can request generation for actors they own **only while a GM client with an API key is online**.
+
+**Privacy:** Generating a background sends the character's questionnaire and sheet details to Google's Gemini API. If you choose **Use this character portrait**, a compressed version of custom Foundry-hosted artwork is also sent to Google. Placeholder artwork is skipped automatically. Do not submit private data without permission. Never commit or share your API key.
 
 ## Install and launch
 
-1. Extract the installable ZIP directly into your Foundry `Data/modules/` directory. The archive already contains its own `black-flag-character-background-generator/` directory.
-2. Restart Foundry, enable the module in a **test** Black Flag world, and log in as GM.
-3. Open **Game Settings → Configure Settings → Module Settings** and re-enter your Gemini API key. **v0.1.1+ stores the key to client-local storage:** previously configured world-scoped keys will not be read. Each GM browser that handles requests needs its own key.
-4. Open a Black Flag **PC** sheet. In its window header controls menu, choose **Generate Character Background** (book icon).
-5. Alternative: **Ctrl+Shift+B** opens the generator for a controlled PC token or the first PC you own. Customize the shortcut under Configure Controls if necessary.
+1. Install from the manifest URL above in Foundry, **or** download the release ZIP and extract it directly into `FoundryVTT/Data/modules/`. The ZIP contains its own top-level `black-flag-character-background-generator/` directory.
+2. Restart Foundry and enable the module in a Black Flag world.
+3. Complete the **Required Gemini API setup** section above.
+4. On a PC sheet, use the book icon / **Generate Character Background** control. Alternatively, **Ctrl+Shift+B** opens it for a controlled PC token or the first PC you own.
 
-This module works with Black Flag's `pc` actor type, not a D&D `character` actor.
+This module supports Black Flag's `pc` actor type, not the D&D `character` actor type.
 
 ## Temporary Gemini overload handling (v0.1.4)
 
@@ -31,7 +50,7 @@ This module works with Black Flag's `pc` actor type, not a D&D `character` actor
 - 3.8 Flash availability, pricing, and rate limits depend on the API key's Google AI Studio project; a running Foundry instance and a real Gemini key are needed for a live integration test.
 - API documentation: https://ai.google.dev/gemini-api/docs/get-started and https://ai.google.dev/gemini-api/docs/migrate-to-interactions
 
-## Optional character artwork (v0.1.5)
+## Optional character artwork (v0.1.5-beta.1)
 
 - On Black Flag PC sheets, the generator previews the PC's **existing actor portrait** if it is custom artwork. Use the checkbox to opt out.
 - Foundry's placeholder `icons/svg/mystery-man.svg` and Black Flag's default `systems/black-flag/artwork/types/pc.svg` automatically skip image analysis; no image is sent.
@@ -89,4 +108,4 @@ The CI workflow runs:
 
 ## Development
 
-Development branch: `development/v0.1.0` / draft PR #1. `main` remains unchanged until approved. GitHub Releases (ZIP + manifest) are the intended distribution path; no Foundry package-registry submission is planned.
+Beta published from the `development/v0.1.0` branch at tag `v0.1.5-beta.1`; `main` is not merged. This beta is distributed through GitHub Releases (ZIP + manifest), not Foundry's package directory. For issues, include Foundry, Black Flag and module versions, and redact all API keys and personal character details.

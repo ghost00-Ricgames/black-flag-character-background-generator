@@ -34,6 +34,26 @@ jobs:
           (cd dist/stage && zip -r ../black-flag-character-background-generator.zip black-flag-character-background-generator -x '*.DS_Store')
           rm -rf dist/stage
           cp module.json dist/module.json
+      - name: Verify installable ZIP layout and beta manifest
+        run: |
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+          root = 'black-flag-character-background-generator/'
+          zip_path = Path('dist/black-flag-character-background-generator.zip')
+          with zipfile.ZipFile(zip_path) as z:
+              names = z.namelist()
+              assert names and all(name.startswith(root) for name in names), 'ZIP must contain the full module folder'
+              assert z.testzip() is None, 'ZIP integrity failure'
+              inner = json.loads(z.read(root + 'module.json'))
+              outer = json.loads(Path('dist/module.json').read_text())
+              assert inner == outer, 'ZIP manifest differs from published manifest'
+              assert inner['download'].endswith('/v' + inner['version'] + '/black-flag-character-background-generator.zip'), 'Release version/download mismatch'
+              for asset in [*inner['esmodules'], *inner['styles'], 'README.md', 'LICENSE']:
+                  assert root + asset in names, f'Missing asset {asset}'
+              print('Verified ' + inner['version'] + ' full-folder ZIP and release manifest')
+          PY
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -44,3 +64,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" dist/black-flag-character-background-generator.zip dist/module.json --title "${GITHUB_REF_NAME}" --prerelease --generate-notes
+      - name: Publish authorized first beta on GitHub Releases
+        # One-time publish on this exact commit marker. The GitHub CLI creates
+        # the prerelease tag pointing to the tested development commit.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development/v0.1.0' && contains(github.event.head_commit.message, '[publish-beta-v0.1.5-beta.1]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v0.1.5-beta.1" \
+            dist/black-flag-character-background-generator.zip dist/module.json \
+            --target "${GITHUB_SHA}" \
+            --title "Black Flag Character Background Generator v0.1.5-beta.1" \
+            --prerelease \
+            --notes-file RELEASE_NOTES.md
