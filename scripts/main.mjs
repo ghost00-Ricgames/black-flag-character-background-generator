@@ -137,7 +137,9 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
     for (const button of form.querySelectorAll("button")) button.disabled=true;
     output.textContent=action==="question" ? "Asking Gemini…" : "Generating character package…";
     try {
-      const result=await sendRequest(action==="question"?"question":"package",this.actor.id,{questionnaire,answers:this.answers});
+      const currentAnswer = this.question ? {question:this.question,answer:interview.querySelector("[data-answer]")?.value || ""} : null;
+      const answerHistory = currentAnswer ? [...this.answers,currentAnswer] : [...this.answers];
+      const result=await sendRequest(action==="question"?"question":"package",this.actor.id,{questionnaire,answers:answerHistory});
       if (action==="question") {
         if (this.question) {
           const previous=interview.querySelector("[data-answer]");
