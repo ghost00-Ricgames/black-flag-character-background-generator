@@ -3,8 +3,12 @@ on:
   push:
     branches: [main, 'development/**']
     tags: ['v*']
-  pull_request:
   workflow_dispatch:
+# Development branches are validated on push; the same commit must not run twice
+# just because a pull request is open. Superseded commits are cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
