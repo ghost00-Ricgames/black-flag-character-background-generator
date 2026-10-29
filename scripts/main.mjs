@@ -87,7 +87,7 @@ async function onSocket(message, senderId) {
   if (message?.type !== "request" || !game.user.isGM || onlineGM()?.id !== game.user.id || message.gmId !== game.user.id) return;
   // The second argument is attached by Foundry's server, not taken from the packet.
   const requester = typeof senderId === "string" ? game.users.get(senderId) : null;
-  if (!requester?.active || !requester.can("QUERY_USER")) return;
+  if (!requester?.active) return;
   if (typeof message.requestId !== "string" || !/^[A-Za-z0-9]{8,64}$/.test(message.requestId)) return;
   if (!ACTIONS.has(message.action)) return;
   let result, error;
@@ -228,7 +228,7 @@ Hooks.once("init", () => {
   game.keybindings.register(ID, "openGenerator", {
     name: "Open Character Background Generator",
     hint: "Open for a controlled PC token, or the first PC you own.",
-    editable: [{ key: "KeyB", modifiers: ["CTRL", "SHIFT"] }],
+    editable: [{ key: "KeyB", modifiers: [foundry.helpers.interaction.KeyboardManager.MODIFIER_KEYS.CONTROL, foundry.helpers.interaction.KeyboardManager.MODIFIER_KEYS.SHIFT] }],
     onDown: () => {
       const actor = canvas?.tokens?.controlled?.find(t => t.actor?.type === "pc" && own(t.actor, game.user))?.actor
         ?? game.actors.find(a => a.type === "pc" && own(a, game.user));
