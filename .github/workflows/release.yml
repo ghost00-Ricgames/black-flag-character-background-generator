@@ -1,0 +1,79 @@
+name: Validate and package
+on:
+  push:
+    branches: [main, 'development/**']
+    tags: ['v*']
+  workflow_dispatch:
+# Development branches are validated on push; the same commit must not run twice
+# just because a pull request is open. Superseded commits are cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          for file in scripts/*.mjs; do node --check "$file"; done
+      - name: Run Foundry API integration tests
+        run: node --test tests/*.test.mjs
+      - name: Validate manifest
+        run: node scripts/validate-manifest.mjs
+      - name: Build installable zip
+        run: |
+          mkdir -p dist
+          mkdir -p dist/stage/black-flag-character-background-generator
+          cp -R module.json scripts styles LICENSE README.md dist/stage/black-flag-character-background-generator/
+          (cd dist/stage && zip -r ../black-flag-character-background-generator.zip black-flag-character-background-generator -x '*.DS_Store')
+          rm -rf dist/stage
+          cp module.json dist/module.json
+      - name: Verify installable ZIP layout and beta manifest
+        run: |
+          python3 - <<'PY'
+          import json
+          import zipfile
+          from pathlib import Path
+          root = 'black-flag-character-background-generator/'
+          zip_path = Path('dist/black-flag-character-background-generator.zip')
+          with zipfile.ZipFile(zip_path) as z:
+              names = z.namelist()
+              assert names and all(name.startswith(root) for name in names), 'ZIP must contain the full module folder'
+              assert z.testzip() is None, 'ZIP integrity failure'
+              inner = json.loads(z.read(root + 'module.json'))
+              outer = json.loads(Path('dist/module.json').read_text())
+              assert inner == outer, 'ZIP manifest differs from published manifest'
+              assert inner['download'].endswith('/v' + inner['version'] + '/black-flag-character-background-generator.zip'), 'Release version/download mismatch'
+              for asset in [*inner['esmodules'], *inner['styles'], 'README.md', 'LICENSE']:
+                  assert root + asset in names, f'Missing asset {asset}'
+              print('Verified ' + inner['version'] + ' full-folder ZIP and release manifest')
+          PY
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: black-flag-character-background-generator
+          path: dist/
+      - name: Publish GitHub Release on version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/black-flag-character-background-generator.zip dist/module.json --title "${GITHUB_REF_NAME}" --prerelease --generate-notes
+      - name: Publish authorized first beta on GitHub Releases
+        # One-time publish on this exact commit marker. The GitHub CLI creates
+        # the prerelease tag pointing to the tested development commit.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development/v0.1.0' && contains(github.event.head_commit.message, '[publish-beta-v0.1.5-beta.1]')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v0.1.5-beta.1" \
+            dist/black-flag-character-background-generator.zip dist/module.json \
+            --target "${GITHUB_SHA}" \
+            --title "Black Flag Character Background Generator v0.1.5-beta.1" \
+            --prerelease \
+            --notes-file RELEASE_NOTES.md
