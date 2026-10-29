@@ -18,12 +18,17 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           for file in scripts/*.mjs; do node --check "$file"; done
+      - name: Run Foundry API integration tests
+        run: node --test tests/*.test.mjs
       - name: Validate manifest
         run: node scripts/validate-manifest.mjs
       - name: Build installable zip
         run: |
           mkdir -p dist
-          zip -r dist/black-flag-character-background-generator.zip module.json scripts styles LICENSE README.md -x '*.DS_Store'
+          mkdir -p dist/stage/black-flag-character-background-generator
+          cp -R module.json scripts styles LICENSE README.md dist/stage/black-flag-character-background-generator/
+          (cd dist/stage && zip -r ../black-flag-character-background-generator.zip black-flag-character-background-generator -x '*.DS_Store')
+          rm -rf dist/stage
           cp module.json dist/module.json
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
