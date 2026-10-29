@@ -151,8 +151,8 @@ test("Questionnaire collects multiline classes, talents, and physical traits",()
   const app=FakeApp.renders.at(-1).app;
   const form={data:{
     lineage:"Human",heritage:"Wanderer",background:"Guide",level:"3",
-    classDetails:"Fighter | 2 | Champion\\nWizard | 1 | ",
-    talents:"Alert\\nLucky",skills:"athletics\\nperception",tools:"smith",
+    classDetails:"Fighter | 2 | Champion\nWizard | 1 | ",
+    talents:"Alert\nLucky",skills:"athletics\nperception",tools:"smith",
     physical_age:"28",physical_height:"6ft",physical_weight:"",physical_eyes:"Brown",
     physical_skin:"",physical_hair:"Black"
   }};
