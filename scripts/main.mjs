@@ -3,7 +3,7 @@ import { actorFacts } from "./character-data.mjs";
 import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePackage, biographyHtml } from "./interview.mjs";
 
 const SETTINGS = {
-  apiKey: { name: "Gemini API Key", hint: "Only trusted GMs should configure this. Stored in Foundry world settings, not a server-side vault.", type: String, default: "", config: true, scope: "world", restricted: true },
+  apiKey: { name: "Gemini API Key", hint: "Only trusted GMs should configure this. Stored in Foundry world settings, not a server-side vault.", type: String, default: "", config: true, scope: "client", restricted: true },
   model: { name: "Gemini Model", hint: "Enter a compatible generateContent model ID.", type: String, default: "gemini-2.5-flash", config: true, scope: "world", restricted: true },
   campaignContext: { name: "Player-safe Campaign Context", hint: "Only lore that players are allowed to see.", type: String, default: "", config: true, scope: "world", restricted: true },
   requireApproval: { name: "Require GM Approval for Player Saves", type: Boolean, default: false, config: true, scope: "world", restricted: true },
@@ -29,7 +29,7 @@ function sendRequest(action, actorId, payload = {}) {
 }
 async function runAI(action, actorId, payload, requester = game.user) {
   const actor = actorById(actorId);
-  if (!own(actor, requester) || actor.type !== "pc") throw new Error("Character ownership required.");
+  if (!own(actor, requester) || actor?.type !== "pc") throw new Error("Character ownership required.");
   if (!["question","package","models","save"].includes(action)) throw new Error("Unsupported action.");
   if (action === "save") {
     if (!payload?.package) throw new Error("No package supplied.");
