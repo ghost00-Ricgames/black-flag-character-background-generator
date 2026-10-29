@@ -57,7 +57,7 @@ async function runAI(action, actorId, payload, requester = game.user) {
   const context = game.settings.get(ID,"campaignContext");
   const instruction = action === "question" ? QUESTION_INSTRUCTION : PACKAGE_INSTRUCTION;
   const result = await GeminiService.request({ key, model, instruction,
-    payload: { character: actorFacts(actor), questionnaire: payload.questionnaire, answers: payload.answers, campaignContext: context, direction: payload.direction || "" }
+    payload: { character: { ...actorFacts(actor), ...payload.questionnaire, classes: payload.questionnaire?.classes ?? actorFacts(actor).classes }, questionnaire: payload.questionnaire, answers: payload.answers, campaignContext: context, direction: payload.direction || "" }
   });
   if (action === "package") return validatePackage(result);
   if (typeof result?.question !== "string" || !result.question.trim()) throw new Error("Gemini did not return a question.");
@@ -107,6 +107,10 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
       <p>Review imported details and answer the starting questions.</p>
       ${fields.map(k=>`<label>${escape(k)}<input name="${k}" value="${escape(this.facts[k])}"></label>`).join("")}
       <label>Classes, individual levels, and subclasses<textarea name="classDetails" rows="4">${escape(this.facts.classes.length ? this.facts.classes.map(c => [c.name,c.level ?? "",c.subclass].join(" | ")).join("\n") : this.facts.class)}</textarea></label>\n      <p class="hint">One class per line: Class | Level | Subclass. Leave unknown values blank. Verify imported values against your character sheet.${this.facts.subclassNotes ? " Unmatched subclasses: "+escape(this.facts.subclassNotes) : ""}</p>\n      <label>Total character level<input name="level" value="${escape(this.facts.level)}"></label>
+      <label>Talents (one per line)<textarea name="talents" rows="3">${escape(this.facts.talents.join("\n"))}</textarea></label>
+      <label>Skill proficiencies (one per line)<textarea name="skills" rows="3">${escape(this.facts.skillProficiencies.join("\n"))}</textarea></label>
+      <label>Tool proficiencies (one per line)<textarea name="tools" rows="3">${escape(this.facts.toolProficiencies.join("\n"))}</textarea></label>
+      ${["age","height","weight","eyes","skin","hair"].map(k=>`<label>${escape(k)}<input name="physical_${k}" value="${escape(this.facts.physical[k])}" placeholder="Optional — Gemini may suggest"></label>`).join("")}
       <label>Character concept<textarea name="concept" rows="2"></textarea></label>
       <label>Formative experience<textarea name="formative" rows="2"></textarea></label>
       <label>Important relationship<textarea name="relationship" rows="2"></textarea></label>
@@ -131,6 +135,11 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
     this.facts.classes = String(data.classDetails ?? "").split(/\r?\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });
     this.facts.class = this.facts.classes.map(c => [c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / ");
     data.classes = this.facts.classes;
+    this.facts.talents = String(data.talents ?? "").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    this.facts.skillProficiencies = String(data.skills ?? "").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    this.facts.toolProficiencies = String(data.tools ?? "").split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+    this.facts.physical = Object.fromEntries(["age","height","weight","eyes","skin","hair"].map(k=>[k,data[`physical_${k}`] ?? ""]));
+    data.talents = this.facts.talents; data.skillProficiencies = this.facts.skillProficiencies; data.toolProficiencies = this.facts.toolProficiencies; data.physical = this.facts.physical;
     return data;
   }
   async execute(action,form) {
