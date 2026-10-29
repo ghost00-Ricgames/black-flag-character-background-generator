@@ -24,7 +24,7 @@ function sendRequest(action, actorId, payload = {}) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { pending.delete(requestId); reject(new Error("GM request timed out.")); }, 90000);
     pending.set(requestId, { resolve, reject, timer });
-    game.socket.emit(SOCKET, { type: "request", requestId, gmId: gm.id, requesterId: game.user.id, actorId, action, payload });
+    game.socket.emit(SOCKET, { type: "request", requestId, gmId: gm.id, actorId, action, payload });
   });
 }
 async function runAI(action, actorId, payload, requester = game.user) {
@@ -73,7 +73,7 @@ async function onSocket(message, senderId) {
     return;
   }
   if (message.type !== "request" || !game.user.isGM || onlineGM()?.id !== game.user.id || message.gmId !== game.user.id) return;
-  const requester = game.users.get(senderId ?? message.requesterId);
+  const requester = game.users.get(senderId);
   if (!requester || !requester.active) return;
   const actor = actorById(message.actorId);
   if (!own(actor, requester) || actor?.type !== "pc") return;
