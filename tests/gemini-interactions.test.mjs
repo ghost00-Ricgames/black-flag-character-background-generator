@@ -38,7 +38,7 @@ test("3.8 Flash Interactions REST request uses stateless structured JSON", async
     assert.deepEqual(body.response_format.schema.required,["question"]);
     assert.equal(body.response_format.type,"text");
     assert.equal(body.response_format.mime_type,"application/json");
-    assert.equal(typeof body.generation_config.temperature,"number");
+    assert.equal(body.generation_config.temperature,undefined);
     assert.equal(body.generation_config.thinking_level,"low");
     assert.equal(body.contents,undefined);
     assert.equal(body.generationConfig,undefined);
@@ -99,5 +99,104 @@ test("question timeout shows a useful error instead of hanging forever", async (
       GeminiService.request({key:"key",kind:"question",instruction:"Ask",payload:{},timeoutMs:5}),
       /Gemini took too long to respond/
     );
+  } finally {globalThis.fetch=saved;}
+});
+
+
+const overload = (status=503, message="This model is currently experiencing high demand.", retryAfter=null) => ({
+  ok: false, status,
+  headers: { get: name => name.toLowerCase() === "retry-after" ? retryAfter : null },
+  json: async () => ({error:{message,status:status===503?"UNAVAILABLE":"RESOURCE_EXHAUSTED"}})
+});
+
+test("503 overload is retried with backoff then falls back to Gemini 3.6", async () => {
+  const saved=globalThis.fetch;
+  const models=[], waits=[];
+  globalThis.fetch=async (_,options)=>{
+    const model=JSON.parse(options.body).model;
+    models.push(model);
+    if (model === "gemini-3.8-flash") return overload();
+    return response(JSON.stringify({question:"Tell me about your home.", suggestions:[]}));
+  };
+  try {
+    const result=await GeminiService.request({
+      key:"key", model:"gemini-3.8-flash",fallbackModel:"gemini-3.6-flash",
+      kind:"question",instruction:"Ask",payload:{},sleep:async ms=>waits.push(ms)
+    });
+    assert.deepEqual(models,["gemini-3.8-flash","gemini-3.8-flash","gemini-3.6-flash"]);
+    assert.equal(waits.length,1);
+    assert.ok(waits[0]>=1200 && waits[0]<1500);
+    assert.equal(result.question,"Tell me about your home.");
+  } finally {globalThis.fetch=saved;}
+});
+
+test("503 overload and unsuccessful fallback yield a helpful error without loops", async () => {
+  const saved=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return overload();};
+  try {
+    await assert.rejects(GeminiService.request({
+      key:"key",model:"gemini-3.8-flash",fallbackModel:"gemini-3.6-flash",
+      kind:"question",instruction:"Ask",payload:{},sleep:async()=>{}
+    }),/Both gemini-3.8-flash and gemini-3.6-flash are overloaded.*503/);
+    assert.equal(calls,3);
+  } finally {globalThis.fetch=saved;}
+});
+
+test("HTTP 503 without configured fallback only retries the primary model", async () => {
+  const saved=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return overload();};
+  try {
+    await assert.rejects(GeminiService.request({
+      key:"key",model:"gemini-3.8-flash",fallbackModel:"",
+      kind:"question",instruction:"Ask",payload:{},sleep:async()=>{}
+    }),/configure a fallback model/);
+    assert.equal(calls,2);
+  } finally {globalThis.fetch=saved;}
+});
+
+test("HTTP 429 spend caps are not retried or sent to backup model", async () => {
+  const saved=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return overload(429,"Project spend cap exceeded");};
+  try {
+    await assert.rejects(GeminiService.request({
+      key:"key",model:"gemini-3.8-flash",fallbackModel:"gemini-3.6-flash",
+      kind:"question",instruction:"Ask",payload:{},sleep:async()=>{}
+    }),/429.*spend cap.*billing caps/);
+    assert.equal(calls,1);
+  } finally {globalThis.fetch=saved;}
+});
+
+test("HTTP 400 invalid payload is never retried or sent to fallback", async () => {
+  const saved=globalThis.fetch;
+  let calls=0;
+  globalThis.fetch=async()=>{calls++;return overload(400,"Invalid response_format schema");};
+  try {
+    await assert.rejects(GeminiService.request({
+      key:"key",model:"gemini-3.8-flash",fallbackModel:"gemini-3.6-flash",
+      kind:"question",instruction:"Ask",payload:{},sleep:async()=>{}
+    }),/400.*Invalid response_format/);
+    assert.equal(calls,1);
+  } finally {globalThis.fetch=saved;}
+});
+
+test("HTTP 429 transient rate limit honors Retry-After and does not switch models", async () => {
+  const saved=globalThis.fetch;
+  const models=[], delays=[];
+  globalThis.fetch=async (_,options)=>{
+    models.push(JSON.parse(options.body).model);
+    if(models.length===1) return overload(429,"Rate limit exceeded","2");
+    return response(JSON.stringify({question:"Now?",suggestions:[]}));
+  };
+  try {
+    const result=await GeminiService.request({
+      key:"key",model:"gemini-3.8-flash",fallbackModel:"gemini-3.6-flash",
+      kind:"question",instruction:"Ask",payload:{},sleep:async ms=>delays.push(ms)
+    });
+    assert.deepEqual(delays,[2000]);
+    assert.deepEqual(models,["gemini-3.8-flash","gemini-3.8-flash"]);
+    assert.equal(result.question,"Now?");
   } finally {globalThis.fetch=saved;}
 });

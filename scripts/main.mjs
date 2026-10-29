@@ -5,6 +5,7 @@ import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePac
 const SETTINGS = {
   apiKey: { name: "Gemini API Key", hint: "Set this on the GM browser only. This key is stored in client settings, not world settings.", type: String, default: "", config: true, scope: "client", restricted: true },
   model: { name: "Gemini Model", hint: "Interactions API model ID (default: gemini-3.8-flash). Existing 2.5 Flash settings automatically upgrade.", type: String, default: "gemini-3.8-flash", config: true, scope: "world", restricted: true },
+  fallbackModel: { name: "Fallback Gemini Model (when overloaded)", hint: "Only used after the primary model returns HTTP 503. Default: gemini-3.6-flash. Leave blank to disable automatic fallback.", type: String, default: "gemini-3.6-flash", config: true, scope: "world", restricted: true },
   campaignContext: { name: "Player-safe Campaign Context", hint: "Only lore that players are allowed to see.", type: String, default: "", config: true, scope: "world", restricted: true },
   requireApproval: { name: "Require GM Approval for Player Saves", type: Boolean, default: false, config: true, scope: "world", restricted: true },
   maxRequests: { name: "Maximum AI Requests per Player per Session", hint: "Enforced by the active GM client; resets when that GM reloads.", type: Number, default: 30, config: true, scope: "world", restricted: true }
@@ -25,11 +26,15 @@ async function sendRequest(action, actorId, payload = {}) {
   if (!ACTIONS.has(action)) throw new Error("Unsupported generator action.");
   if (gm.id === game.user.id) return runAI(action, actorId, payload, game.user);
   const requestId = randomId();
+  // Previous 90s player timeout was shorter than a single 150s package call.
+  // Allow one primary retry and an overloaded-model fallback to complete.
+  const responseDeadline = action === "package" ? 360000
+    : action === "question" ? 210000 : 90000;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(requestId);
-      reject(new Error("The GM did not respond within 90 seconds."));
-    }, 90000);
+      reject(new Error("The GM did not respond before the request deadline."));
+    }, responseDeadline);
     pending.set(requestId, { resolve, reject, timer, gmId: gm.id });
     // Foundry server supplies the authenticated sender ID to the receiving handler.
     // Do not include or trust a client-supplied requester ID.
@@ -61,13 +66,15 @@ async function runAI(action, actorId, payload, requester = game.user) {
   // Existing worlds persist their old 2.5 default even when the registered default changes.
   const model = !configuredModel || configuredModel === "gemini-2.5-flash"
     ? "gemini-3.8-flash" : configuredModel;
+  const fallbackModel = String(game.settings.get(ID,"fallbackModel") ?? "").trim();
   const context = game.settings.get(ID,"campaignContext");
   const instruction = action === "question" ? QUESTION_INSTRUCTION : PACKAGE_INSTRUCTION;
   const canonical = actorFacts(actor);
   const submitted = payload?.questionnaire ?? {};
   const character = { ...canonical, ...submitted, name: canonical.name, classes: submitted.classes ?? canonical.classes };
   const result = await GeminiService.request({
-    key, model, instruction, kind: action,
+    key, model, fallbackModel, instruction, kind: action,
+    onStatus: message => ui.notifications.info(message),
     payload: { character, questionnaire: submitted, answers: payload?.answers ?? [], campaignContext: context, direction: payload?.direction || "" }
   });
   if (action === "package") return validatePackage(result);

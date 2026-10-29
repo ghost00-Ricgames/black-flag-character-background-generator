@@ -1,6 +1,6 @@
 # Black Flag Character Background Generator
 
-**v0.1.2 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
+**v0.1.4 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
 
 ## Install and launch
 
@@ -11,6 +11,16 @@
 5. Alternative: **Ctrl+Shift+B** opens the generator for a controlled PC token or the first PC you own. Customize the shortcut under Configure Controls if necessary.
 
 This module works with Black Flag's `pc` actor type, not a D&D `character` actor.
+
+## Temporary Gemini overload handling (v0.1.4)
+
+- If the chosen model returns **503 high demand**, the GM client retries once with a short capped exponential backoff, then tries the configurable **Fallback Gemini Model** (default `gemini-3.6-flash`).
+- Leave the fallback-model setting blank to disable it. A request will never retry indefinitely.
+- Transient `429` rate limits receive at most one backoff retry, honoring a capped `Retry-After` header; **billing/spend cap** problems do not retry or cause fallback.
+- Invalid request/credential errors (4xx other than 429) do not retry or fall back.
+- The total player/GM socket response timeout is extended to accommodate generation retries. This does not change the individual model request timeout.
+- Gemini 3.8 Flash does not support explicitly setting temperature; requests omit deprecated sampling fields and use low thinking only for short interview questions.
+- A backup model may have different quality, pricing and per-project quota limits. Check Google AI Studio usage if both return overload errors.
 
 ## Gemini 3.8 Flash / Interactions API
 

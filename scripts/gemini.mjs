@@ -71,52 +71,123 @@ async function jsonResponse(response) {
   catch { throw new Error("Gemini returned a non-JSON HTTP response."); }
 }
 
+/** Short, capped exponential backoff with jitter; honor a modest Retry-After. */
+function retryDelayMs(response, attempt) {
+  const header = response.headers?.get?.("retry-after");
+  if (header) {
+    const seconds = Number(header);
+    const millis = Number.isFinite(seconds) && seconds >= 0
+      ? seconds * 1000 : Date.parse(header) - Date.now();
+    if (Number.isFinite(millis) && millis >= 0) return Math.min(millis, 12000);
+  }
+  return Math.min(1200 * (2 ** attempt), 6000) + Math.floor(Math.random() * 300);
+}
+
+function httpError(status, data, model) {
+  const message = typeof data?.error?.message === "string"
+    ? data.error.message.slice(0, 500) : "Gemini request failed.";
+  return new Error("Gemini HTTP " + status + " (" + model + "): " + message);
+}
+
 export class GeminiService {
-  static async request({ key, model = "gemini-3.8-flash", instruction, payload, kind = "package", temperature = 0.8, timeoutMs }) {
+  /**
+   * Retry only transient overload and rate-limit errors. When a primary model
+   * stays overloaded, optionally try one configured fallback. Do not fall back
+   * on invalid API keys, project spend caps, unsupported models, or malformed
+   * requests. Never save the input in Gemini interaction history (store:false).
+   */
+  static async request({
+    key, model = "gemini-3.8-flash", fallbackModel = "",
+    instruction, payload, kind = "package", timeoutMs,
+    // Injected by tests; the default is a normal browser delay.
+    sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+    onStatus
+  }) {
     if (!key) throw new Error("Configure a Gemini API key on the GM browser.");
-    const selectedModel = String(model || "gemini-3.8-flash").trim().replace(/^models\//, "");
-    if (!/^[\w.-]+$/.test(selectedModel)) throw new Error("Gemini model ID contains invalid characters.");
+    const normalize = value => String(value || "").trim().replace(/^models\//, "");
+    const selectedModel = normalize(model) || "gemini-3.8-flash";
+    const backupModel = normalize(fallbackModel);
+    for (const name of [selectedModel, backupModel].filter(Boolean)) {
+      if (!/^[\w.-]+$/.test(name)) throw new Error("Gemini model ID contains invalid characters.");
+    }
     const schema = kind === "question" ? QUESTION_SCHEMA : kind === "package" ? PACKAGE_SCHEMA : null;
     if (!schema) throw new Error("Unsupported Gemini response format.");
     const deadlineMs = timeoutMs ?? (kind === "question" ? 75000 : 150000);
-    const requestBody = {
-      model: selectedModel,
-      input: JSON.stringify(payload),
-      system_instruction: instruction,
-      generation_config: {
-        temperature,
-        // A single interview question doesn't need deep model reasoning.
-        ...(kind === "question" ? {thinking_level: "low"} : {})
-      },
-      response_format: { type: "text", mime_type: "application/json", schema },
-      // We already send complete answer history; do not retain character backstories
-      // for server-side conversational state.
-      store: false
-    };
-    let response;
-    try {
-      response = await fetch(INTERACTIONS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-        body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(deadlineMs)
-      });
-    } catch (error) {
-      if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-        throw new Error("Gemini took too long to respond (" + Math.round(deadlineMs / 1000) +
-          " seconds). Check the model and Google AI Studio usage, then retry.");
+    const mayFallback = !!backupModel && backupModel !== selectedModel;
+    const models = mayFallback ? [selectedModel, backupModel] : [selectedModel];
+    let primaryOverloaded = false;
+
+    for (const [modelIndex, activeModel] of models.entries()) {
+      if (modelIndex > 0 && !primaryOverloaded) break;
+      const body = {
+        model: activeModel,
+        input: JSON.stringify(payload),
+        system_instruction: instruction,
+        // Gemini 3.8 Flash no longer uses explicit sampling parameters such as
+        // temperature. Only request short reasoning for a follow-up question.
+        ...(kind === "question" && /^gemini-3\./.test(activeModel)
+          ? { generation_config: { thinking_level: "low" } } : {}),
+        response_format: { type: "text", mime_type: "application/json", schema },
+        store: false
+      };
+      // One retry for transient errors on the primary, no repeated requests
+      // against a fallback that is itself overloaded.
+      const attempts = modelIndex === 0 ? 2 : 1;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        let response;
+        try {
+          response = await fetch(INTERACTIONS_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(deadlineMs)
+          });
+        } catch (error) {
+          if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+            throw new Error("Gemini took too long to respond (" + Math.round(deadlineMs / 1000) +
+              " seconds). Check Google AI Studio usage, then retry.");
+          }
+          throw new Error("Could not reach the Gemini Interactions API. Check your network connection.");
+        }
+        // 503 proxy responses are not always JSON, but are still overloads.
+        const data = response.ok ? await jsonResponse(response)
+          : await response.json().catch(() => ({error:{message: "Service temporarily unavailable."}}));
+        if (response.ok) {
+          const output = interactionText(data);
+          try { return JSON.parse(output); }
+          catch { throw new Error("Gemini returned invalid JSON for the character " + kind + "."); }
+        }
+        const overloaded = response.status === 503;
+        const rateLimited = response.status === 429;
+        const reason = String(data?.error?.message ?? "");
+        const spendingCap = /spend cap|billing|payment|daily quota|per.day|hard limit/i.test(reason);
+        const canRetry = overloaded || (rateLimited && !spendingCap);
+        if (canRetry && attempt + 1 < attempts) {
+          await sleep(retryDelayMs(response, attempt));
+          continue;
+        }
+        if (overloaded && modelIndex === 0 && mayFallback) {
+          primaryOverloaded = true;
+          if (typeof onStatus === "function") onStatus(
+            activeModel + " is overloaded. Trying " + backupModel + "."
+          );
+          break;
+        }
+        if (overloaded) {
+          const details = mayFallback && modelIndex > 0
+            ? "Both " + selectedModel + " and " + backupModel + " are overloaded."
+            : activeModel + " is overloaded.";
+          throw new Error(details + " Google returned HTTP 503 (high demand). Try again later" +
+            (mayFallback ? "." : " or configure a fallback model in Module Settings."));
+        }
+        if (rateLimited) {
+          throw new Error(httpError(429, data, activeModel).message +
+            " Check your Google AI Studio rate limits and billing caps.");
+        }
+        throw httpError(response.status, data, activeModel);
       }
-      throw new Error("Could not reach the Gemini Interactions API. Check your network connection.");
     }
-    const data = await jsonResponse(response);
-    if (!response.ok) {
-      const message = data?.error?.message || "Gemini request failed";
-      // Never log the key or the submitted biography.
-      throw new Error("Gemini HTTP " + response.status + ": " + String(message));
-    }
-    const output = interactionText(data);
-    try { return JSON.parse(output); }
-    catch { throw new Error("Gemini returned invalid JSON for the character " + kind + "."); }
+    throw new Error("Gemini did not produce a response.");
   }
 
   /** Optional discovery for future model picker; unlike the old helper, do not
