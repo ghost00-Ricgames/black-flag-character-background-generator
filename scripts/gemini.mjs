@@ -97,7 +97,7 @@ export class GeminiService {
    * requests. Never save the input in Gemini interaction history (store:false).
    */
   static async request({
-    key, model = "gemini-3.8-flash", fallbackModel = "",
+    key, model = "gemini-3.8-flash", fallbackModel = "", image = null,
     instruction, payload, kind = "package", timeoutMs,
     // Injected by tests; the default is a normal browser delay.
     sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -115,13 +115,22 @@ export class GeminiService {
     const deadlineMs = timeoutMs ?? (kind === "question" ? 75000 : 150000);
     const mayFallback = !!backupModel && backupModel !== selectedModel;
     const models = mayFallback ? [selectedModel, backupModel] : [selectedModel];
+    let imageInput = null;
+    if (image != null) {
+      if (image.type !== "image" || image.mime_type !== "image/jpeg" ||
+          typeof image.data !== "string" || image.data.length > 2_000_000 ||
+          !/^[A-Za-z0-9+/]+={0,2}$/.test(image.data)) {
+        throw new Error("Invalid portrait image payload.");
+      }
+      imageInput = {type:"image",mime_type:"image/jpeg",data:image.data};
+    }
     let primaryOverloaded = false;
 
     for (const [modelIndex, activeModel] of models.entries()) {
       if (modelIndex > 0 && !primaryOverloaded) break;
       const body = {
         model: activeModel,
-        input: JSON.stringify(payload),
+        input: imageInput ? [{type:"text",text:JSON.stringify(payload)},imageInput] : JSON.stringify(payload),
         system_instruction: instruction,
         // Gemini 3.8 Flash no longer uses explicit sampling parameters such as
         // temperature. Only request short reasoning for a follow-up question.

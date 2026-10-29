@@ -1,5 +1,6 @@
 import { GeminiService } from "./gemini.mjs";
 import { actorFacts } from "./character-data.mjs";
+import { hasCustomArtwork, prepareArtwork } from "./artwork.mjs";
 import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePackage, biographyHtml } from "./interview.mjs";
 
 const SETTINGS = {
@@ -71,15 +72,23 @@ async function runAI(action, actorId, payload, requester = game.user) {
   const instruction = action === "question" ? QUESTION_INSTRUCTION : PACKAGE_INSTRUCTION;
   const canonical = actorFacts(actor);
   const submitted = payload?.questionnaire ?? {};
-  const character = { ...canonical, ...submitted, name: canonical.name, classes: submitted.classes ?? canonical.classes };
+  const { useArtwork, ...questionnaireFacts } = submitted;
+  const character = { ...canonical, ...questionnaireFacts, name: canonical.name, classes: submitted.classes ?? canonical.classes };
+  // Select and decode ONLY the GM's authoritative actor portrait.
+  // The player sends an opt-in boolean, never an image URL or image bytes.
+  const artwork = useArtwork === true
+    ? await prepareArtwork(actor.img) : {image:null,reason:"disabled"};
   const result = await GeminiService.request({
-    key, model, fallbackModel, instruction, kind: action,
+    key, model, fallbackModel, instruction, kind: action, image: artwork.image,
     onStatus: message => ui.notifications.info(message),
     payload: { character, questionnaire: submitted, answers: payload?.answers ?? [], campaignContext: context, direction: payload?.direction || "" }
   });
+  if (artwork.reason === "unavailable") {
+    result.artworkNotice = "The portrait could not be read; Gemini continued with text only.";
+  }
   if (action === "package") return validatePackage(result);
   if (typeof result?.question !== "string" || !result.question.trim()) throw new Error("Gemini did not return a question.");
-  return { question: result.question, suggestions: Array.isArray(result.suggestions) ? result.suggestions.slice(0,3).map(String) : [] };
+  return { question: result.question, suggestions: Array.isArray(result.suggestions) ? result.suggestions.slice(0,3).map(String) : [], artworkNotice: result.artworkNotice || "" };
 }
 // Query responses are targeted to the requesting User rather than broadcast.
 // A response may update only a pending client promise, never a document.
@@ -130,8 +139,17 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   async _renderHTML() {
     const root=document.createElement("section"); root.className="bf-background-form";
     const fields=["lineage","heritage","background"];
+    const customArtwork = hasCustomArtwork(this.actor.img);
     root.innerHTML=`<form>
       <h2>${escape(this.facts.name)}</h2>
+      <section class="bf-artwork-option" aria-label="Character portrait analysis">
+        ${customArtwork
+          ? `<img class="bf-portrait-preview" src="${escape(this.actor.img)}" alt="Portrait of ${escape(this.facts.name)}" loading="lazy">
+             <label class="bf-artwork-toggle"><input type="checkbox" name="useArtwork" checked>
+               Use this character portrait to inspire the background</label>
+             <p class="hint">Visible details are suggestions, not changes to character facts. To change this image, update the portrait on the character sheet.</p>`
+          : `<p class="hint">Default or missing character portrait detected. Artwork analysis will be skipped; Gemini will use character details and answers only.</p>`}
+      </section>
       <p>Review imported details and answer the starting questions.</p>
       ${fields.map(k=>`<label>${escape(k)}<input name="${k}" value="${escape(this.facts[k])}"></label>`).join("")}
       <label>Classes, individual levels, and subclasses<textarea name="classDetails" rows="4">${escape(this.facts.classes.length ? this.facts.classes.map(c => [c.name,c.level ?? "",c.subclass].join(" | ")).join("\n") : this.facts.class)}</textarea></label>\n      <p class="hint">One class per line: Class | Level | Subclass. Leave unknown values blank. Verify imported values against your character sheet.${this.facts.subclassNotes ? " Unmatched subclasses: "+escape(this.facts.subclassNotes) : ""}</p>\n      <label>Total character level<input name="level" value="${escape(this.facts.level)}"></label>
@@ -159,6 +177,7 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   }
   collect(form) {
     const data=Object.fromEntries(new FormData(form).entries());
+    data.useArtwork = hasCustomArtwork(this.actor.img) && data.useArtwork === "on";
     for (const key of ["lineage","heritage","background","level"]) this.facts[key]=data[key];
     this.facts.classes = String(data.classDetails ?? "").split(/\r?\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });
     this.facts.class = this.facts.classes.map(c => [c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / ");
@@ -194,7 +213,8 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
         if (result.suggestions?.length) {
           const hint=document.createElement("p"); hint.className="hint"; hint.textContent="Ideas: "+result.suggestions.join(" | "); interview.append(hint);
         }
-        output.textContent="Answer the follow-up, then ask another or generate your package.";
+        output.textContent="Answer the follow-up, then ask another or generate your package."
+          + (result.artworkNotice ? "\n" + result.artworkNotice : "");
       } else {
         if (this.question) {
           this.answers.push({question:this.question,answer:interview.querySelector("[data-answer]")?.value || ""});
@@ -220,6 +240,12 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
           }catch(error){ui.notifications.error(error.message);}
           finally{this.busy=false;revise.disabled=false;}
         });
+        if (result.artworkNotice) {
+          const notice = document.createElement("p");
+          notice.className = "hint";
+          notice.textContent = result.artworkNotice;
+          output.append(notice);
+        }
         output.append(heading,editor,direction,revise,save);
       }
     } catch(error) { output.textContent=error.message; }

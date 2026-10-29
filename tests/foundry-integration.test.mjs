@@ -21,7 +21,7 @@ gm.query = async () => { throw Error("GM is not a player"); };
 player.query = async (queryName, message) => { queried.push({queryName, message, recipient:"player"}); return true; };
 intruder.query = async (queryName, message) => { queried.push({queryName, message, recipient:"intruder"}); return true; };
 const pc = {
-  id:"hero", type:"pc", name:"Hero", items:[{name:"Alert",type:"talent"}],
+  id:"hero", type:"pc", name:"Hero", img:"systems/black-flag/artwork/types/pc.svg", items:[{name:"Alert",type:"talent"}],
   updates:[],
   system:{
     biography:{backstory:"",age:"28",height:"",weight:"",eyes:"Brown",skin:"",hair:""},
@@ -195,4 +195,54 @@ test("Existing Gemini 2.5 Flash world preference uses 3.8 Flash with Interaction
     assert.equal(lastPayload.contents,undefined);
     assert.equal(lastPayload.generationConfig,undefined);
   } finally {values.model=prior;}
+});
+
+
+test("default Black Flag artwork is skipped even when a requester opts in", async () => {
+  const original=pc.img;
+  pc.img="systems/black-flag/artwork/types/pc.svg";
+  try {
+    await request({type:"request",gmId:"gm",requestId:"0123456789abcdef",actorId:"hero",
+      action:"question",payload:{questionnaire:{useArtwork:true},answers:[]}},"player");
+    assert.equal(typeof lastPayload.input,"string");
+    assert.equal(lastPayload.input.includes("base64"),false);
+  } finally {pc.img=original;}
+});
+test("custom portrait sent as image alongside text, no raw image data in player socket", async () => {
+  const old={fetch:globalThis.fetch,location:globalThis.location,createImageBitmap:globalThis.createImageBitmap,document:globalThis.document};
+  const oldImg=pc.img;
+  pc.img="worlds/demo/portraits/hero.webp";
+  globalThis.location={href:"https://foundry.example/game"};
+  globalThis.createImageBitmap=async()=>({width:1600,height:800,close(){}});
+  globalThis.document={createElement:()=>({
+    width:0,height:0,
+    getContext:()=>({fillRect(){},drawImage(){},set fillStyle(_x) {}}),
+    toDataURL:()=> "data:image/jpeg;base64,YWJj"
+  })};
+  globalThis.fetch=async (url,options)=>{
+    if(options.method==="GET") {
+      assert.equal(new URL(url).pathname,"/worlds/demo/portraits/hero.webp");
+      return {ok:true,headers:{get:()=>null},blob:async()=>new Blob(["fake"],{type:"image/webp"})};
+    }
+    lastPayload=JSON.parse(options.body);
+    return {ok:true,json:async()=>({status:"completed",steps:[{type:"model_output",content:[{type:"text",text:JSON.stringify({question:"Who gave you that scar?",suggestions:[]})}]}]})};
+  };
+  try {
+    const questionnaire={useArtwork:true,physical:{age:"28"}};
+    const playerPacket={type:"request",gmId:"gm",requestId:"0123456789abcdef",actorId:"hero",
+      action:"question",payload:{questionnaire,answers:[]}};
+    assert.equal(JSON.stringify(playerPacket).includes("YWJj"),false);
+    await request(playerPacket,"player");
+    assert.equal(Array.isArray(lastPayload.input),true);
+    assert.equal(lastPayload.input[0].type,"text");
+    assert.equal(lastPayload.input[1].type,"image");
+    assert.equal(lastPayload.input[1].mime_type,"image/jpeg");
+    assert.equal(lastPayload.input[1].data,"YWJj");
+    assert.equal(queried.at(-1).message.result.question,"Who gave you that scar?");
+  } finally {
+    pc.img=oldImg;
+    for(const [key,value] of Object.entries(old)) {
+      if(value===undefined) delete globalThis[key]; else globalThis[key]=value;
+    }
+  }
 });

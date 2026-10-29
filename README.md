@@ -1,6 +1,6 @@
 # Black Flag Character Background Generator
 
-**v0.1.4 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
+**v0.1.5 testing baseline** for Foundry VTT **14.369** / Black Flag system **3.0.079** (system minimum **3.0.075**). This is an unreleased development build.
 
 ## Install and launch
 
@@ -30,6 +30,16 @@ This module works with Black Flag's `pc` actor type, not a D&D `character` actor
 - Each request uses structured JSON response format and `store: false` to avoid retaining character histories for server-side conversation state. All prior interview answers are included with each request.
 - 3.8 Flash availability, pricing, and rate limits depend on the API key's Google AI Studio project; a running Foundry instance and a real Gemini key are needed for a live integration test.
 - API documentation: https://ai.google.dev/gemini-api/docs/get-started and https://ai.google.dev/gemini-api/docs/migrate-to-interactions
+
+## Optional character artwork (v0.1.5)
+
+- On Black Flag PC sheets, the generator previews the PC's **existing actor portrait** if it is custom artwork. Use the checkbox to opt out.
+- Foundry's placeholder `icons/svg/mystery-man.svg` and Black Flag's default `systems/black-flag/artwork/types/pc.svg` automatically skip image analysis; no image is sent.
+- Upload/change a portrait using the normal Foundry character-sheet image picker. This baseline intentionally does not include a second file picker.
+- The **GM client** loads the actor's authoritative artwork, never image bytes or arbitrary URLs submitted by players. Only same-origin Foundry-hosted raster images are accepted. External URLs, SVG files and inaccessible art fall back to text-only generation.
+- Images are resized to at most 1024px per side, converted to JPEG and bounded to a 2 MB base64 payload. Original portrait files aren't uploaded, changed, or written by this module.
+- When opted in, the Interactions API receives one text part plus one JPEG image part. Portraits are *inspiration*, never substitutes for fixed player facts or proof of past events.
+- Missing or invalid art is nonfatal: the background generator proceeds with only the questionnaire and character sheet. Gemini may receive the converted JPEG when enabled; don't opt in if an image must remain private.
 
 ## Interview
 

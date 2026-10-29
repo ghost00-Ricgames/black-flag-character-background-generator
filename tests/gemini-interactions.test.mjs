@@ -200,3 +200,23 @@ test("HTTP 429 transient rate limit honors Retry-After and does not switch model
     assert.equal(result.question,"Now?");
   } finally {globalThis.fetch=saved;}
 });
+
+
+test("Interactions sends mixed text and image parts only when an image is present", async()=>{
+  const saved=globalThis.fetch;
+  let sent;
+  globalThis.fetch=async (_url,options)=>{
+    sent=JSON.parse(options.body);
+    return response(JSON.stringify({question:"Tell me about your cloak.",suggestions:[]}));
+  };
+  try {
+    await GeminiService.request({key:"test",kind:"question",instruction:"Ask",payload:{name:"Hero"},
+      image:{type:"image",mime_type:"image/jpeg",data:"YWJj"}});
+    assert.deepEqual(sent.input,[
+      {type:"text",text:JSON.stringify({name:"Hero"})},
+      {type:"image",mime_type:"image/jpeg",data:"YWJj"}
+    ]);
+    await assert.rejects(GeminiService.request({key:"test",kind:"question",instruction:"Ask",payload:{},
+      image:{type:"image",mime_type:"image/svg+xml",data:"YWJj"}}),/Invalid portrait/);
+  } finally {globalThis.fetch=saved;}
+});
