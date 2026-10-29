@@ -24,7 +24,7 @@ function sendRequest(action, actorId, payload = {}) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => { pending.delete(requestId); reject(new Error("GM request timed out.")); }, 90000);
     pending.set(requestId, { resolve, reject, timer });
-    game.socket.emit(SOCKET, { type: "request", requestId, gmId: gm.id, actorId, action, payload });
+    game.socket.emit(SOCKET, { type: "request", requestId, gmId: gm.id, requesterId: game.user.id, actorId, action, payload });
   });
 }
 async function runAI(action, actorId, payload, requester = game.user) {
@@ -73,7 +73,7 @@ async function onSocket(message, senderId) {
     return;
   }
   if (message.type !== "request" || !game.user.isGM || onlineGM()?.id !== game.user.id || message.gmId !== game.user.id) return;
-  const requester = game.users.get(senderId);
+  const requester = game.users.get(senderId ?? message.requesterId);
   if (!requester || !requester.active) return;
   const actor = actorById(message.actorId);
   if (!own(actor, requester) || actor?.type !== "pc") return;
@@ -128,7 +128,7 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
   collect(form) {
     const data=Object.fromEntries(new FormData(form).entries());
     for (const key of ["lineage","heritage","background","level"]) this.facts[key]=data[key];
-    this.facts.classes = String(data.classDetails ?? "").split(/\\r?\\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });
+    this.facts.classes = String(data.classDetails ?? "").split(/\r?\n/).filter(line => line.trim()).map(line => { const [name,level,subclass] = line.split("|").map(v => v.trim()); return {name,level:level || null,subclass:subclass || ""}; });
     this.facts.class = this.facts.classes.map(c => [c.name,c.level,c.subclass && `(${c.subclass})`].filter(Boolean).join(" ")).join(" / ");
     data.classes = this.facts.classes;
     return data;
@@ -199,7 +199,7 @@ Hooks.once("ready",()=>{game.socket.on(SOCKET,onSocket);});
 Hooks.on("renderActorSheetV2",(app,element)=>{
   const actor=app.actor??app.document;
   if(actor?.type!=="pc"||!own(actor,game.user))return;
-  const host=element instanceof HTMLElement?element:element?.[0];
+  const host=element instanceof HTMLElement?element:(element?.[0] ?? app.element);
   if(!host||host.querySelector("[data-bf-background-open]"))return;
   const header=host.querySelector(".window-header");
   if(!header)return;
