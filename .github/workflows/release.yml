@@ -64,16 +64,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "${GITHUB_REF_NAME}" dist/black-flag-character-background-generator.zip dist/module.json --title "${GITHUB_REF_NAME}" --prerelease --generate-notes
-      - name: Publish authorized first beta on GitHub Releases
-        # One-time publish on this exact commit marker. The GitHub CLI creates
-        # the prerelease tag pointing to the tested development commit.
-        if: github.event_name == 'push' && github.ref == 'refs/heads/development/v0.1.0' && contains(github.event.head_commit.message, '[publish-beta-v0.1.5-beta.1]')
+      - name: Publish approved v0.1.6 beta on GitHub Releases
+        # One-time publish from the audited development commit. The CLI creates
+        # the prerelease tag at that commit after the validation/ZIP steps pass.
+        if: github.event_name == 'push' && github.ref == 'refs/heads/development/v0.1.0' && contains(github.event.head_commit.message, '[publish-beta-v0.1.6-beta.1]')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v0.1.5-beta.1" \
+          gh release create "v0.1.6-beta.1" \
             dist/black-flag-character-background-generator.zip dist/module.json \
             --target "${GITHUB_SHA}" \
-            --title "Black Flag Character Background Generator v0.1.5-beta.1" \
+            --title "Black Flag Character Background Generator v0.1.6-beta.1" \
             --prerelease \
             --notes-file RELEASE_NOTES.md

@@ -1,21 +1,26 @@
 # Black Flag Character Background Generator
 
-> **PUBLIC BETA v0.1.5-beta.1 — GOOGLE GEMINI API ACCESS REQUIRED**
+> **PUBLIC BETA v0.1.6-beta.1 — GOOGLE GEMINI API ACCESS REQUIRED**
 >
 > This module **does not work without your own Google Gemini API key and access to a supported Gemini model**. The GM must obtain a key through [Google AI Studio](https://aistudio.google.com/apikey), configure it in Foundry, and have an eligible Google API project with available quota. Google may impose usage limits or charges; any Google API costs are the user's responsibility. A Gemini API key is **not included**, and the module does not provide free AI requests.
 
-**System compatibility:** Foundry VTT **14** (tested against **14.369**), Kobold Press Black Flag / Tales of the Valiant **3.0.075+** (verified with **3.0.079**). This is a **beta**, not a Foundry Package Directory listing.
+**System compatibility:** Foundry VTT **14** (including v14.370), Kobold Press Black Flag / Tales of the Valiant **3.0.075+** (verified with **3.0.079**). This is a **beta**, not a Foundry Package Directory listing.
 
 **Install via Foundry manifest:**
-`https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.5-beta.1/module.json`
+`https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/download/v0.1.6-beta.1/module.json`
 
-**Release and ZIP download:** [v0.1.5-beta.1](https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/tag/v0.1.5-beta.1).
+**Release and ZIP download:** [v0.1.6-beta.1](https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/tag/v0.1.6-beta.1).
 
-## Development build v0.1.6-dev.1 — readable background preview
+## New in v0.1.6-beta.1: Readable Preview
 
-Generated packages now open in a human-readable **Readable Preview** rather than JSON. Select **Edit JSON** to revise the complete structured draft; returning to Preview validates and updates the display. **Save** and **Regenerate** use the current editor contents, not an older draft. Basic Markdown formatting is rendered safely in both the preview and the saved biography. Suggested physical traits remain review-only and GM-only secret suggestions are excluded from the preview.
+- Generated packages open in **Readable Preview** by default with headings, paragraphs, bold/italic emphasis and lists rather than raw JSON.
+- Switch to **Edit JSON** to revise the complete draft. Switching back validates and updates the preview.
+- **Save** and **Regenerate** use the current edited draft. Invalid JSON shows an error and never overwrites the character biography.
+- The saved biography now renders basic Markdown formatting instead of displaying markup characters. Model-authored HTML is escaped for safety.
+- Suggested physical traits appear separately and remain review-only. GM-only secrets are excluded from the preview and saved biography.
+- Image analysis, Gemini configuration, and character data extraction are unchanged from v0.1.5.
 
-This version is a **development ZIP**, not an additional published beta. The public release remains v0.1.5-beta.1; do not use the unreleased v0.1.6-dev.1 download URL until the next prerelease is approved.
+**Updating from v0.1.5-beta.1:** That release uses a version-pinned manifest. To install this beta, use the **new v0.1.6-beta.1 manifest URL** above or replace the old module with this release's ZIP while Foundry is shut down. The older release is retained for rollback.
 
 ## Required Gemini API setup
 
