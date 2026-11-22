@@ -11,17 +11,103 @@ export function validatePackage(data) {
   if (!data.physical || typeof data.physical !== "object" || Array.isArray(data.physical)) data.physical = {};
   return data;
 }
+
+/**
+ * Limited markdown-to-HTML formatter for character prose.
+ * All model-authored text is escaped before safe formatting tags are added.
+ * We never accept raw HTML or make model-supplied links clickable.
+ */
+function formatInline(value) {
+  return foundry.utils.escapeHTML(String(value ?? "")).replace(
+    /\x60([^\x60\n]+)\x60|\*\*([^*\n]+)\*\*|__([^_\n]+)__|\*([^*\n]+)\*|(?<!\w)_([^_\n]+)_(?!\w)|\[([^\]\n]+)\]\([^)\n]+\)/g,
+    (match, code, boldStar, boldUnderscore, italicStar, italicUnderscore, linkLabel) => {
+      if (code !== undefined) return "<code>" + code + "</code>";
+      if (boldStar !== undefined || boldUnderscore !== undefined) return "<strong>" + (boldStar ?? boldUnderscore) + "</strong>";
+      if (italicStar !== undefined || italicUnderscore !== undefined) return "<em>" + (italicStar ?? italicUnderscore) + "</em>";
+      if (linkLabel !== undefined) return linkLabel;
+      return match;
+    }
+  );
+}
+export function richTextHtml(value) {
+  const lines = String(value ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const result = [], paragraph = [], list = [], code = [];
+  let listType = null, inCode = false;
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    result.push("<p>" + paragraph.map(formatInline).join("<br>") + "</p>");
+    paragraph.length = 0;
+  };
+  const flushList = () => {
+    if (!list.length) return;
+    result.push("<" + listType + ">" +
+      list.map(item => "<li>" + formatInline(item) + "</li>").join("") +
+      "</" + listType + ">");
+    list.length = 0; listType = null;
+  };
+  const flushCode = () => {
+    result.push("<pre><code>" + foundry.utils.escapeHTML(code.join("\n")) + "</code></pre>");
+    code.length = 0;
+  };
+  for (const line of lines) {
+    if (/^\s*\x60{3}/.test(line)) {
+      flushParagraph(); flushList();
+      if (inCode) flushCode();
+      inCode = !inCode; continue;
+    }
+    if (inCode) { code.push(line); continue; }
+    if (!line.trim()) { flushParagraph(); flushList(); continue; }
+    const heading = /^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = Math.min(4, Math.max(3, heading[1].length + 2));
+      result.push("<h" + level + ">" + formatInline(heading[2]) + "</h" + level + ">");
+      continue;
+    }
+    if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushParagraph(); flushList(); result.push("<hr>"); continue;
+    }
+    const bullet = /^\s*[-*+]\s+(.+)$/.exec(line);
+    const number = /^\s*\d+[.)]\s+(.+)$/.exec(line);
+    if (bullet || number) {
+      flushParagraph();
+      const type = bullet ? "ul" : "ol";
+      if (listType && listType !== type) flushList();
+      listType = type; list.push((bullet || number)[1]); continue;
+    }
+    flushList();
+    const quote = /^\s*>\s?(.*)$/.exec(line);
+    if (quote) {
+      flushParagraph();
+      result.push("<blockquote><p>" + formatInline(quote[1]) + "</p></blockquote>");
+      continue;
+    }
+    paragraph.push(line);
+  }
+  flushParagraph(); flushList();
+  if (inCode) flushCode();
+  return result.join("\n");
+}
+
 export function biographyHtml(data) {
   const escape = value => foundry.utils.escapeHTML(String(value ?? ""));
-  const paragraph = value => escape(value).replace(/\n\n+/g,"</p><p>").replace(/\n/g,"<br>");
-  const section = (title, html) => `<h2>${escape(title)}</h2>${html}`;
-  const profile = Object.entries(data.profile || {}).map(([k,v]) => `<p><strong>${escape(k)}:</strong> ${paragraph(Array.isArray(v) ? v.join(", ") : v)}</p>`).join("");
-  const list = (items, format) => `<ul>${items.map(i => `<li>${format(i)}</li>`).join("")}</ul>`;
+  const section = (title, html) => '<section class="bf-bio-section"><h2>' + escape(title) + '</h2>' + html + '</section>';
+  const profile = Object.entries(data.profile || {}).map(([key, value]) =>
+    '<div class="bf-bio-field"><h3>' + escape(key) + '</h3>' +
+    richTextHtml(Array.isArray(value) ? value.join(", ") : value) + '</div>'
+  ).join("");
+  const list = (items, format) => items.length
+    ? "<ul>" + items.map(item => "<li>" + format(item) + "</li>").join("") + "</ul>"
+    : "<p>None recorded.</p>";
   return [
-    section("Character History", `<p>${paragraph(data.story)}</p>`),
+    section("Character History", richTextHtml(data.story)),
     section("Roleplaying Profile", profile),
-    section("Relationships", list(data.relationships, i => `<strong>${escape(i.name)}</strong> (${escape(i.connection)}): ${escape(i.significance)} — ${escape(i.status)}`)),
-    section("Secrets", list(data.secrets.filter(i => i.visibility !== "gm_suggestion"), i => `<strong>${escape(i.title)}:</strong> ${escape(i.description)}`)),
-    section("Adventure Hooks", list(data.hooks, i => `<strong>${escape(i.title)}:</strong> ${escape(i.description)}`))
-  ].join("");
+    section("Relationships", list(data.relationships || [], item =>
+      "<strong>" + formatInline(item.name) + "</strong> (" +
+      formatInline(item.connection) + "): " + formatInline(item.significance) + " — " + formatInline(item.status))),
+    section("Secrets", list((data.secrets || []).filter(item => item.visibility !== "gm_suggestion"), item =>
+      "<strong>" + formatInline(item.title) + "</strong>: " + richTextHtml(item.description))),
+    section("Adventure Hooks", list(data.hooks || [], item =>
+      "<strong>" + formatInline(item.title) + "</strong>: " + richTextHtml(item.description)))
+  ].join("\n");
 }

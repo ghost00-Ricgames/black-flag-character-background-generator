@@ -2,6 +2,7 @@ import { GeminiService } from "./gemini.mjs";
 import { actorFacts } from "./character-data.mjs";
 import { hasCustomArtwork, prepareArtwork } from "./artwork.mjs";
 import { MODULE_ID as ID, QUESTION_INSTRUCTION, PACKAGE_INSTRUCTION, validatePackage, biographyHtml } from "./interview.mjs";
+import { createPackagePanel } from "./preview.mjs";
 
 const SETTINGS = {
   apiKey: { name: "Gemini API Key", hint: "Set this on the GM browser only. This key is stored in client settings, not world settings.", type: String, default: "", config: true, scope: "client", restricted: true },
@@ -222,31 +223,27 @@ class BackgroundGeneratorApp extends foundry.applications.api.ApplicationV2 {
         }
         this.package=result;
         output.replaceChildren();
-        const heading=document.createElement("h3"); heading.textContent="Editable character package";
-        const editor=document.createElement("textarea"); editor.className="bf-json-editor"; editor.rows=18; editor.value=JSON.stringify(result,null,2);
-        const save=document.createElement("button"); save.type="button"; save.textContent="Save approved package to biography";
-        const revise=document.createElement("button"); revise.type="button"; revise.textContent="Regenerate with direction";
-        const direction=document.createElement("textarea"); direction.rows=2; direction.placeholder="What should Gemini change?";
-        save.addEventListener("click",async()=>{
-          try { const parsed=JSON.parse(editor.value); await sendRequest("save",this.actor.id,{package:parsed}); ui.notifications.info("Character biography saved."); }
-          catch(error){ui.notifications.error(error.message);}
-        });
-        revise.addEventListener("click",async()=>{
-          if(this.busy)return;
-          this.busy=true; revise.disabled=true;
-          try {
-            const revised=await sendRequest("package",this.actor.id,{questionnaire,answers:this.answers,direction:direction.value+"\nPrevious draft: "+editor.value});
-            editor.value=JSON.stringify(revised,null,2); this.package=revised;
-          }catch(error){ui.notifications.error(error.message);}
-          finally{this.busy=false;revise.disabled=false;}
-        });
-        if (result.artworkNotice) {
-          const notice = document.createElement("p");
-          notice.className = "hint";
-          notice.textContent = result.artworkNotice;
-          output.append(notice);
-        }
-        output.append(heading,editor,direction,revise,save);
+        output.append(createPackagePanel({
+          packageData: result,
+          artworkNotice: result.artworkNotice || "",
+          onError: message => ui.notifications.error(message),
+          onSave: async packageData => {
+            await sendRequest("save", this.actor.id, {package:packageData});
+            ui.notifications.info("Character biography saved.");
+          },
+          onRegenerate: async ({packageData, direction}) => {
+            if (this.busy) throw new Error("Generation is still in progress.");
+            this.busy = true;
+            try {
+              const revised = await sendRequest("package", this.actor.id, {
+                questionnaire, answers: this.answers,
+                direction: direction + "\nPrevious draft: " + JSON.stringify(packageData)
+              });
+              this.package = revised;
+              return revised;
+            } finally { this.busy = false; }
+          }
+        }));
       }
     } catch(error) { output.textContent=error.message; }
     finally { this.busy=false; for(const button of form.querySelectorAll("button")) button.disabled=false; }

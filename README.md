@@ -11,6 +11,12 @@
 
 **Release and ZIP download:** [v0.1.5-beta.1](https://github.com/ghost00-Ricgames/black-flag-character-background-generator/releases/tag/v0.1.5-beta.1).
 
+## Development build v0.1.6-dev.1 — readable background preview
+
+Generated packages now open in a human-readable **Readable Preview** rather than JSON. Select **Edit JSON** to revise the complete structured draft; returning to Preview validates and updates the display. **Save** and **Regenerate** use the current editor contents, not an older draft. Basic Markdown formatting is rendered safely in both the preview and the saved biography. Suggested physical traits remain review-only and GM-only secret suggestions are excluded from the preview.
+
+This version is a **development ZIP**, not an additional published beta. The public release remains v0.1.5-beta.1; do not use the unreleased v0.1.6-dev.1 download URL until the next prerelease is approved.
+
 ## Required Gemini API setup
 
 1. Create or access a Gemini API project in [Google AI Studio](https://aistudio.google.com/apikey). Generate your **own** API key and ensure the project can use a configured model.
