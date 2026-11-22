@@ -1,0 +1,27 @@
+.bf-background-form { display:grid; gap:.65rem; padding:.75rem; overflow:auto; height:100%; } .bf-background-form form { display:grid; gap:.65rem; } .bf-background-form label { display:grid; gap:.2rem; text-transform:capitalize; } .bf-background-form textarea { width:100%; resize:vertical; } .bf-background-form .bf-result { max-height:450px; overflow:auto; white-space:pre-wrap; } .bf-background-form pre { white-space:pre-wrap; overflow-wrap:anywhere; } .bf-background-form .bf-actions { display:flex; gap:.5rem; flex-wrap:wrap; } .bf-background-form .bf-json-editor { min-height:260px; font-family:monospace; }
+.bf-artwork-option { display:grid; gap:.45rem; justify-items:start; border:1px solid var(--color-border-light-primary, #8885); border-radius:5px; padding:.6rem; }
+.bf-artwork-option .bf-portrait-preview { max-width:128px; max-height:170px; height:auto; width:auto; object-fit:contain; border-radius:4px; }
+.bf-artwork-option label.bf-artwork-toggle { display:flex; align-items:center; gap:.5rem; text-transform:none; }
+.bf-artwork-toggle input[type=checkbox] { width:auto; flex:none; }
+
+/* Human-readable result preview. Keep generated prose distinct from the editor. */
+.bf-package-panel { display:grid; gap:.65rem; min-width:0; }
+.bf-package-view-tabs { display:flex; gap:.5rem; flex-wrap:wrap; }
+.bf-package-preview { overflow-wrap:anywhere; white-space:normal; padding:.8rem 1rem;
+  border:1px solid var(--color-border-light-primary, #8885); border-radius:6px;
+  background:var(--color-bg-option, transparent); line-height:1.55; }
+.bf-package-preview .bf-bio-section { margin-bottom:1rem; }
+.bf-package-preview .bf-bio-section > h2 { margin:0 0 .55rem; padding-bottom:.2rem;
+  border-bottom:1px solid var(--color-border-light-primary, #8885); }
+.bf-package-preview .bf-bio-field { margin:.5rem 0; }
+.bf-package-preview .bf-bio-field > h3 { font-size:1em; margin:.3rem 0; text-transform:capitalize; }
+.bf-package-preview p { margin:.4rem 0 .75rem; }
+.bf-package-preview ul, .bf-package-preview ol { margin:.3rem 0 .8rem 1.5rem; padding:0; }
+.bf-package-preview li { margin:.2rem 0; }
+.bf-package-preview blockquote { margin:.65rem .3rem; padding:.2rem .75rem;
+  border-left:3px solid var(--color-border-light-primary, #8885); }
+.bf-package-preview pre, .bf-package-preview code { white-space:pre-wrap; overflow-wrap:anywhere; }
+.bf-package-error { margin:0; color:var(--color-text-error, #b44); font-weight:bold; }
+.bf-package-panel [hidden] { display:none !important; }
+.bf-package-panel .bf-json-editor { width:100%; }
+.bf-package-panel .bf-preview-unsaved { opacity:.9; }
